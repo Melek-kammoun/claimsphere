@@ -1,0 +1,5 @@
+# root .gitignore
+backend/node_modules/
+backend/.env
+claimsphere-frontside/node_modules/
+claimsphere-frontside/.env
