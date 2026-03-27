@@ -1,0 +1,55 @@
+ClaimSphere Vehicle Estimation Best Practices
+
+1) Où implémenter la logique d'estimation ?
+- Backend recommandé (Node/Express ou Supabase Edge) : centralisée, sécurisée, testable, audit, versioning.
+- Frontend uniquement pour UX et prévision locale, mais pas pour la logique de prix de production.
+
+2) Stockage des clés API
+- Backend seulement.
+- Variables d'environnement (.env local, secrets managés cloud / Supabase / Vercel).
+- Ne pas exposer au SPA/bundle.
+
+3) Structure backend pour POST /api/estimate-vehicle
+- backend/src/index.ts
+- backend/src/routes/estimateVehicle.ts
+- backend/src/services/vehicleEstimateService.ts
+- backend/src/validators/estimateVehicleSchema.ts
+- backend/.env
+- log + suivi + audits
+
+4) Supabase Edge Functions
+- Oui si petite API serverless, proche DB.
+- Code : /supabase/functions/estimate-vehicle/index.ts.
+- Utils : validate body, heuristiques, environnement, réponse JSON.
+
+5) Exemple sécurisé (API route, variables env, validation, estimation)
+- estimateVehicleSchema Joi
+- service estimation déterministe + coefficients
+- route Express POST /api/estimate-vehicle
+- gestion erreurs, status 400/500, ratio déclarations.
+
+6) Exemple Edge Function Supabase
+- serve
+- validation champs
+- estimation rules + overpayment check
+
+Bonus: améliorations
+- Vérifier montant déclaré vs estimé : 120%/50% rules
+- Smart : règles + DB + ML + fallback IA (OpenAI)
+- Retour fields : {estimatedValue, confidence, source, explanation}
+
+Front-end integration:
+- validation form + fetch /api/estimate-vehicle
+- setEstimatedValue
+- warning + état
+
+Sécurité et production
+- keys backend
+- rate limit + CORS
+- nommage / logging sécurisé
+- pas d’appel IA à chaque frappe
+
+Architecture rapide:
+- endpoints: /api/estimate-vehicle, /api/contract-request, /api/claim
+- Supabase policies, table vehicle_estimates
+- UI: slice store, risques, etc.
