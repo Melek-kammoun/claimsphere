@@ -3,3 +3,5 @@ backend/node_modules/
 backend/.env
 claimsphere-frontside/node_modules/
 claimsphere-frontside/.env
+claimsphere-backend/node_modules/
+claimsphere-backend/.env
