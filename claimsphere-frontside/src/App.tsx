@@ -13,7 +13,7 @@ import ClaimsPage from "./pages/client/dashboard/ClaimsPage";
 import OffersPage from "./pages/client/OffersPage";
 import OfferDetailPage from "./pages/client/OfferDetailPage";
 import AgentDashboard from "./pages/agent/AgentDashboard";
-import AdminPlaceholder from "./pages/admin/AdminPlaceholder";
+import AdminAgentsPage from "./pages/admin/AdminAgentsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,7 +37,7 @@ const App = () => (
           </Route>
           
           <Route path="/agent" element={<AgentDashboard />} />
-          <Route path="/admin" element={<AdminPlaceholder />} />
+          <Route path="/admin" element={<AdminAgentsPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
