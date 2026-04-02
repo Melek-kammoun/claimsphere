@@ -4,6 +4,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import estimateVehicleRouter from "./routes/estimateVehicle.js";
 import dbHealthRouter from "./routes/dbHealth.js";
+import claimsRouter from "./routes/claims.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
@@ -25,6 +26,7 @@ app.use(
 
 app.use("/api", estimateVehicleRouter);
 app.use("/api", dbHealthRouter);
+app.use("/api/claims", claimsRouter);
 
 app.use(errorHandler);
 
