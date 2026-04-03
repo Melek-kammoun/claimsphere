@@ -1,8 +1,5 @@
 // users/users.service.ts
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -39,15 +36,21 @@ export class UsersService {
     });
     return users.map((user) => this.toUserView(user));
   }
+  async findOne(id: string): Promise<UserView> {
+    const user = await this.usersRepository.findOne({ where: { id } });
+    if (!user) throw new NotFoundException(`User #${id} not found`);
+    return this.toUserView(user);
+  }
 
   async create(dto: CreateUserDto): Promise<UserView> {
     try {
-      const savedUser = await this.usersRepository.manager.transaction(async (manager) => {
-        const id = uuidv4();
-        const fullName = dto.full_name ?? dto.name;
+      const savedUser = await this.usersRepository.manager.transaction(
+        async (manager) => {
+          const id = uuidv4();
+          const fullName = dto.full_name ?? dto.name;
 
-        await manager.query(
-          `
+          await manager.query(
+            `
             INSERT INTO auth.users (
               id,
               aud,
@@ -78,33 +81,36 @@ export class UsersService {
               NOW()
             )
           `,
-          [
-            id,
-            dto.email,
-            dto.password,
-            JSON.stringify({ provider: 'email', providers: ['email'] }),
-            JSON.stringify({
-              name: dto.name,
-              full_name: fullName,
-              role: dto.role,
-              status: dto.status,
-              specialty: dto.specialty,
-            }),
-          ],
-        );
+            [
+              id,
+              dto.email,
+              dto.password,
+              JSON.stringify({ provider: 'email', providers: ['email'] }),
+              JSON.stringify({
+                name: dto.name,
+                full_name: fullName,
+                role: dto.role,
+                status: dto.status,
+                specialty: dto.specialty,
+              }),
+            ],
+          );
 
-        return manager.getRepository(User).save({
-          id,
-          role: dto.role,
-          full_name: fullName,
-          contract_number: dto.contract_number,
-          phone: dto.phone ?? '',
-        });
-      });
+          return manager.getRepository(User).save({
+            id,
+            role: dto.role,
+            full_name: fullName,
+            contract_number: dto.contract_number,
+            phone: dto.phone ?? '',
+          });
+        },
+      );
 
       return this.toUserView(savedUser);
     } catch (error) {
-      throw new Error(`Unable to create agent: ${error instanceof Error ? error.message : 'unknown error'}`);
+      throw new Error(
+        `Unable to create agent: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
     }
   }
 

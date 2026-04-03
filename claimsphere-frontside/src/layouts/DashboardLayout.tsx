@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation, Outlet } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -8,6 +8,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ChatbotWidget from "@/components/ChatbotWidget";
+import { apiRequest } from "@/lib/api-client";
+
+interface UserInfo {
+  full_name?: string;
+}
 
 const navItems = [
   { title: "Tableau de bord", path: "/dashboard", icon: LayoutDashboard },
@@ -21,7 +26,25 @@ const navItems = [
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [notifCount, setNotifCount] = useState(0);
   const location = useLocation();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const [userData, notifData] = await Promise.all([
+          apiRequest<UserInfo>("/users/me"),
+          apiRequest<unknown>("/notifications?limit=100"),
+        ]);
+        setUser(userData);
+        setNotifCount(Array.isArray(notifData) ? notifData.length : 0);
+      } catch {
+        // silently fail
+      }
+    };
+    fetchUser();
+  }, []);
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -80,13 +103,19 @@ export default function DashboardLayout() {
           <div className="flex items-center gap-4">
             <button className="relative text-muted-foreground hover:text-foreground">
               <Bell className="w-5 h-5" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center rounded-full font-bold">3</span>
+              {notifCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center rounded-full font-bold">
+                  {notifCount}
+                </span>
+              )}
             </button>
             <div className="flex items-center gap-2 cursor-pointer">
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                 <User className="w-4 h-4 text-primary" />
               </div>
-              <span className="hidden sm:block text-sm font-medium text-foreground">Ahmed B.</span>
+              <span className="hidden sm:block text-sm font-medium text-foreground">
+                {user?.full_name ?? "..."}
+              </span>
             </div>
           </div>
         </header>

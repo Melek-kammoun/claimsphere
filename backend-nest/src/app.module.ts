@@ -1,37 +1,22 @@
 import { Module } from '@nestjs/common';
-
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { SupabaseModule } from './supabase/supabase.module';
-import { ProfilesModule } from './profiles/profiles.module';
-import { NotificationsModule } from './notifications/notifications.module';
-import { DocumentsModule } from './documents/documents.module';
-import { ContractsModule } from './contracts/contracts.module';
-import { ClaimsModule } from './claims/claims.module';
-import { AiScoresModule } from './ai_scores/ai_scores.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './users/entities/user.entity';
 import { UsersModule } from './users/users.module';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiScoresModule } from './ai_scores/ai_scores.module';
+import { ContractsModule } from './contracts/contracts.module';
+import { DocumentsModule } from './documents/documents.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AuthModule } from './auth/auth.module';
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-/*<<<<<<< HEAD
-    SupabaseModule,
-    ProfilesModule,
-    NotificationsModule,
-    DocumentsModule,
-    ContractsModule,
-    ClaimsModule,
-    AiScoresModule,
-  ],
-  controllers: [AppController],
-  providers: [AppService],
-*/
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
+      imports: [ConfigModule, AuthModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         type: 'postgres' as const,
@@ -51,5 +36,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
     DocumentsModule,
     NotificationsModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

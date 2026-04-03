@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:5000";
+const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
 
 export class ApiError extends Error {
   status: number;
@@ -16,8 +16,23 @@ type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
+const getToken = (): string | null => {
+  const raw = localStorage.getItem("sb-raizxiwxrkgnhnlccvcx-auth-token");
+  console.log("raw token:", raw); 
+
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { access_token?: string };
+    console.log("access_token:", parsed.access_token);
+    return parsed.access_token ?? null;
+  } catch {
+    console.error("Failed to parse auth token");
+    return null;
+  }
+};
+
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const token = localStorage.getItem("token");
+  const token = getToken();
   const url = /^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path}`;
 
   const response = await fetch(url, {
