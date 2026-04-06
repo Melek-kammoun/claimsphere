@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { useCreateContrat } from "@/hooks/use-contrats";
 import { useVehicleEstimate } from "@/hooks/use-vehicle-estimate";
 
 const OFFER_OPTIONS = [
@@ -11,9 +13,13 @@ const OFFER_OPTIONS = [
   { label: "Securite", value: "Securite" },
 ] as const;
 
+const DEFAULT_CLIENT_ID = "4904a8fa-1242-4f12-affa-725ec84e4e4d";
+
 export default function ContractRequestPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const estimateMutation = useVehicleEstimate();
+  const createContratMutation = useCreateContrat();
   const [form, setForm] = useState({
     type: "Serenite",
     dateDebut: "",
@@ -71,15 +77,49 @@ export default function ContractRequestPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log("Nouvelle demande de contrat", {
-      ...form,
-      estimatedValue,
-      prime: backendPrime,
-      warning,
-    });
-    navigate("/dashboard/contracts");
+
+    try {
+      await createContratMutation.mutateAsync({
+        client_id: DEFAULT_CLIENT_ID,
+        type: form.type,
+        start_date: form.dateDebut || undefined,
+        status: "non_traite",
+        montant_declare: form.montantDeclare
+          ? Number(form.montantDeclare)
+          : undefined,
+        marque: form.vehiculeMarque || undefined,
+        modele: form.vehiculeModele || undefined,
+        age: form.ageVehicule ? Number(form.ageVehicule) : undefined,
+        kilometrage: form.kilometrage ? Number(form.kilometrage) : undefined,
+        serie: form.immatriculationChiffres
+          ? Number(form.immatriculationChiffres)
+          : undefined,
+        num_voiture: form.immatriculationLettres
+          ? Number(form.immatriculationLettres.replace(/\D/g, ""))
+          : undefined,
+        prime: backendPrime ?? undefined,
+        valeur_estimee: estimatedValue ?? undefined,
+      });
+
+      toast({
+        title: "Contrat cree",
+        description: "La demande de contrat a ete envoyee.",
+      });
+      navigate("/dashboard/contracts");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Impossible de creer le contrat.";
+
+      toast({
+        title: "Echec de creation",
+        description: message,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -161,7 +201,9 @@ export default function ContractRequestPage() {
 
           <div className="flex gap-3">
             <Button type="submit" className="bg-primary text-primary-foreground">
-              Envoyer la demande
+              {createContratMutation.isPending
+                ? "Envoi en cours..."
+                : "Envoyer la demande"}
             </Button>
             <Button variant="ghost" type="button" onClick={() => navigate("/dashboard/contracts")}>
               Annuler

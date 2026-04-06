@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:5000";
+
+if (!import.meta.env.VITE_API_URL) {
+  console.warn("VITE_API_URL non défini, utilisation de http://localhost:5000");
+}
 
 export class ApiError extends Error {
   status: number;
