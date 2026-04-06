@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 
 const fadeUp = {
@@ -16,13 +16,12 @@ const fadeUp = {
   visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.08, duration: 0.5 } } as const),
 };
 
-type Claim = {
+type ContractApiResponse = {
   id: number;
   status: string;
-  description: string;
-  contractType: string;
-  montantDeclare: string;
-  fraudRisk: number;
+  type: string;
+  montant_declare: number;
+  client_id: string;
 };
 
 const statusColors: Record<string, string> = {
@@ -32,64 +31,229 @@ const statusColors: Record<string, string> = {
 };
 
 export default function AgentDashboard() {
+  const [activeContracts, setActiveContracts] = useState<Contract[]>([]);
+  const [pendingContracts, setPendingContracts] = useState<Contract[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState("all");
 
   useEffect(() => {
-    const fetchClaims = async () => {
+    const fetchData = async () => {
       setLoading(true);
       try {
-        const response = await fetch("http://localhost:5000/api/claims");
-        const data = await response.json();
-        setClaims(
-          Array.isArray(data)
-            ? data.map((item: any) => ({
+        // Fetch active contracts
+        const activeResponse = await fetch("http://localhost:5000/api/contrats?status=actif");
+        const activeData = await activeResponse.json();
+        setActiveContracts(
+          Array.isArray(activeData)
+            ? activeData.map((item: ContractApiResponse) => ({
                 id: item.id,
                 status: item.status,
-                description: item.description,
-                contractType: item.contracts?.type || "-",
-                montantDeclare: item.contracts?.montant_declare ? `${item.contracts.montant_declare} TND` : "-",
-                fraudRisk: item.ai_scores?.[0]?.score ? Math.round(item.ai_scores[0].score * 100) : 0,
+                type: item.type,
+                montant_declare: item.montant_declare || 0,
+                client_id: item.client_id,
               }))
             : []
         );
+
+        // Fetch pending contracts
+        const pendingResponse = await fetch("http://localhost:5000/api/contrats/pending");
+        const pendingData = await pendingResponse.json();
+        setPendingContracts(
+          Array.isArray(pendingData)
+            ? pendingData.map((item: ContractApiResponse) => ({
+                id: item.id,
+                status: item.status,
+                type: item.type,
+                montant_declare: item.montant_declare || 0,
+                client_id: item.client_id,
+              }))
+            : []
+        );
+
+        // Mock data for claims (back-end not ready)
+        setClaims([
+          {
+            id: 1,
+            status: "non_traite",
+            description: "Accident de voiture - collision arrière",
+            contractType: "tous_risques",
+            montantDeclare: "5000 TND",
+            fraudRisk: 15,
+          },
+          {
+            id: 2,
+            status: "en_cours",
+            description: "Vol de véhicule",
+            contractType: "vol",
+            montantDeclare: "15000 TND",
+            fraudRisk: 30,
+          },
+          {
+            id: 3,
+            status: "traite",
+            description: "Bris de glace - pare-brise",
+            contractType: "bris_de_glace",
+            montantDeclare: "800 TND",
+            fraudRisk: 5,
+          },
+          {
+            id: 4,
+            status: "non_traite",
+            description: "Incendie partiel",
+            contractType: "incendie",
+            montantDeclare: "12000 TND",
+            fraudRisk: 45,
+          },
+        ]);
       } catch (err) {
+        console.error("Erreur de chargement:", err);
+        setActiveContracts([]);
+        setPendingContracts([]);
         setClaims([]);
       }
       setLoading(false);
     };
-    fetchClaims();
+    fetchData();
   }, []);
 
-  // ✅ Approuver un sinistre
+  // ✅ Approuver un contrat
   const handleApprove = async (id: number) => {
     try {
-      await fetch(`http://localhost:5000/api/claims/${id}/approve`, { method: 'PATCH' });
-      setClaims(prev => prev.filter(c => c.id !== id));
+      await fetch(`http://localhost:5000/api/contrats/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'approuve' })
+      });
+      setPendingContracts(prev => prev.filter(c => c.id !== id));
     } catch (err) {
       console.error("Erreur approbation:", err);
     }
   };
 
-  // ✅ Refuser un sinistre
+  // ✅ Refuser un contrat
   const handleReject = async (id: number) => {
     try {
-      await fetch(`http://localhost:5000/api/claims/${id}/reject`, { method: 'PATCH' });
-      setClaims(prev => prev.filter(c => c.id !== id));
+      await fetch(`http://localhost:5000/api/contrats/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'refuse' })
+      });
+      setPendingContracts(prev => prev.filter(c => c.id !== id));
     } catch (err) {
       console.error("Erreur refus:", err);
     }
   };
 
-  const filteredCases = claims.filter((c) => {
-    const matchSearch =
-      c.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(c.id).toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = filterType === "all" || c.contractType === filterType;
-    return matchSearch && matchType;
-  });
+  const renderContractsList = (contractsList: Contract[], type: string) => {
+    if (loading) {
+      return <div>Chargement...</div>;
+    }
+    if (contractsList.length === 0) {
+      return <div>Aucun contrat trouvé.</div>;
+    }
+    return (
+      <div className="space-y-4">
+        {contractsList.map((c, i) => (
+          <motion.div
+            key={c.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.08 }}
+            className="bg-card rounded-xl border shadow-card p-6"
+          >
+            <div className="flex flex-col lg:flex-row justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="font-display font-bold text-foreground">Contrat #{c.id}</span>
+                  <Badge variant="outline" className={statusColors[c.status] || ""}>{c.status}</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mb-1">
+                  Type: <span className="text-foreground font-medium">{c.type}</span>
+                </p>
+                <p className="text-sm font-medium text-foreground">Montant déclaré: {c.montant_declare} TND</p>
+                <p className="text-sm text-muted-foreground">Client ID: {c.client_id}</p>
+              </div>
+              {type === "en_attente" && (
+                <div className="flex flex-row lg:flex-col gap-2 self-start">
+                  <Button
+                    size="sm"
+                    className="bg-success text-success-foreground hover:bg-success/90"
+                    onClick={() => handleApprove(c.id)}
+                  >
+                    <ThumbsUp className="w-4 h-4 mr-1" /> Approuver
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => handleReject(c.id)}
+                  >
+                    <ThumbsDown className="w-4 h-4 mr-1" /> Refuser
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled>
+                    <Eye className="w-4 h-4 mr-1" /> Détails
+                  </Button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderClaimsList = (claimsList: Claim[]) => {
+    if (claimsList.length === 0) {
+      return <div>Aucun sinistre trouvé.</div>;
+    }
+    return (
+      <div className="space-y-4">
+        {claimsList.map((c, i) => (
+          <motion.div
+            key={c.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.08 }}
+            className="bg-card rounded-xl border shadow-card p-6"
+          >
+            <div className="flex flex-col lg:flex-row justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="font-display font-bold text-foreground">Sinistre #{c.id}</span>
+                  <Badge variant="outline" className={statusColors[c.status] || ""}>{c.status}</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mb-1">
+                  Type de contrat: <span className="text-foreground font-medium">{c.contractType}</span>
+                </p>
+                <p className="text-sm font-medium text-foreground">Montant déclaré: {c.montantDeclare}</p>
+                <p className="text-sm text-muted-foreground">Description: {c.description}</p>
+
+                {/* AI indicator */}
+                <div className="mt-3 p-3 rounded-lg bg-muted/50 border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bot className="w-4 h-4 text-primary" />
+                    <span className="text-xs font-semibold text-foreground">Analyse IA</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Risque fraude:</span>
+                    <Progress value={c.fraudRisk} className="flex-1 h-2" />
+                    <span className={`text-xs font-bold ${c.fraudRisk > 50 ? "text-destructive" : c.fraudRisk > 25 ? "text-warning" : "text-success"}`}>
+                      {c.fraudRisk}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-row lg:flex-col gap-2 self-start">
+                <Button size="sm" variant="ghost" disabled>
+                  <Eye className="w-4 h-4 mr-1" /> Détails
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -115,117 +279,46 @@ export default function AgentDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: "Dossiers en attente", value: claims.filter(c => c.status === "non_traite").length, icon: Clock, color: "text-warning" },
-            { label: "Approuvés", value: claims.filter(c => c.status === "approuve").length, icon: CheckCircle, color: "text-success" },
-            { label: "Refusés", value: claims.filter(c => c.status === "refuse").length, icon: AlertTriangle, color: "text-destructive" },
-            { label: "Total", value: claims.length, icon: Users, color: "text-primary" },
-          ].map((stat, i) => (
-            <motion.div key={stat.label} initial="hidden" animate="visible" variants={fadeUp} custom={i} className="bg-card rounded-xl p-5 border shadow-card">
-              <stat.icon className={`w-5 h-5 ${stat.color} mb-2`} />
-              <div className="font-display text-2xl font-bold text-foreground">{stat.value}</div>
-              <div className="text-xs text-muted-foreground">{stat.label}</div>
-            </motion.div>
-          ))}
-        </div>
+        <Tabs defaultValue="contrats" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="contrats">Contrats</TabsTrigger>
+            <TabsTrigger value="sinistres">Sinistres</TabsTrigger>
+          </TabsList>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher par description ou numéro..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="w-full sm:w-48">
-              <Filter className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Filtrer par type de contrat" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les types</SelectItem>
-              <SelectItem value="tous_risques">Tous risques</SelectItem>
-              <SelectItem value="tiers">Tiers</SelectItem>
-              <SelectItem value="vol">Vol</SelectItem>
-              <SelectItem value="bris_de_glace">Bris de glace</SelectItem>
-              <SelectItem value="incendie">Incendie</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <TabsContent value="contrats" className="space-y-6">
+            {/* Contrats Actifs */}
+            <div>
+              <h2 className="text-xl font-bold mb-4">Contrats Actifs</h2>
+              {renderContractsList(activeContracts, "actifs")}
+            </div>
 
-        {/* Cases */}
-        <div className="space-y-4">
-          {loading ? (
-            <div>Chargement des sinistres...</div>
-          ) : filteredCases.length === 0 ? (
-            <div>Aucun sinistre trouvé.</div>
-          ) : (
-            filteredCases.map((c, i) => (
-              <motion.div
-                key={c.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-                className="bg-card rounded-xl border shadow-card p-6"
-              >
-                <div className="flex flex-col lg:flex-row justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <span className="font-display font-bold text-foreground">{c.id}</span>
-                      <Badge variant="outline" className={statusColors[c.status] || ""}>{c.status}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">
-                      Type de contrat: <span className="text-foreground font-medium">{c.contractType}</span>
-                    </p>
-                    <p className="text-sm font-medium text-foreground">Montant déclaré: {c.montantDeclare}</p>
-                    <p className="text-sm text-muted-foreground">Description: {c.description}</p>
+            {/* Contrats en Attente */}
+            <div>
+              <h2 className="text-xl font-bold mb-4">Contrats en Attente</h2>
+              {renderContractsList(pendingContracts, "en_attente")}
+            </div>
+          </TabsContent>
 
-                    {/* AI indicator */}
-                    <div className="mt-3 p-3 rounded-lg bg-muted/50 border">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Bot className="w-4 h-4 text-primary" />
-                        <span className="text-xs font-semibold text-foreground">Analyse IA</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Risque fraude:</span>
-                        <Progress value={c.fraudRisk} className="flex-1 h-2" />
-                        <span className={`text-xs font-bold ${c.fraudRisk > 50 ? "text-destructive" : c.fraudRisk > 25 ? "text-warning" : "text-success"}`}>
-                          {c.fraudRisk}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+          <TabsContent value="sinistres" className="space-y-6">
+            {/* Sinistres en Attente */}
+            <div>
+              <h2 className="text-xl font-bold mb-4">Sinistres en Attente</h2>
+              {renderClaimsList(claims.filter(c => c.status === "non_traite"))}
+            </div>
 
-                  {/* ✅ Actions activées */}
-                  <div className="flex flex-row lg:flex-col gap-2 self-start">
-                    <Button
-                      size="sm"
-                      className="bg-success text-success-foreground hover:bg-success/90"
-                      onClick={() => handleApprove(c.id)}
-                    >
-                      <ThumbsUp className="w-4 h-4 mr-1" /> Approuver
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleReject(c.id)}
-                    >
-                      <ThumbsDown className="w-4 h-4 mr-1" /> Refuser
-                    </Button>
-                    <Button size="sm" variant="ghost" disabled>
-                      <Eye className="w-4 h-4 mr-1" /> Détails
-                    </Button>
-                  </div>
-                </div>
-              </motion.div>
-            ))
-          )}
-        </div>
+            {/* Sinistres en Cours */}
+            <div>
+              <h2 className="text-xl font-bold mb-4">Sinistres en Cours</h2>
+              {renderClaimsList(claims.filter(c => c.status === "en_cours"))}
+            </div>
+
+            {/* Sinistres Traités */}
+            <div>
+              <h2 className="text-xl font-bold mb-4">Sinistres Traités</h2>
+              {renderClaimsList(claims.filter(c => c.status === "traite"))}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
