@@ -279,6 +279,22 @@ export default function AgentDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: "Contrats Actifs", value: activeContracts.length, icon: CheckCircle, color: "text-success" },
+            { label: "Contrats en Attente", value: pendingContracts.length, icon: Clock, color: "text-warning" },
+            { label: "Sinistres en Attente", value: claims.filter(c => c.status === "non_traite").length, icon: AlertTriangle, color: "text-warning" },
+            { label: "Sinistres en Cours", value: claims.filter(c => c.status === "en_cours").length, icon: Users, color: "text-primary" },
+          ].map((stat, i) => (
+            <motion.div key={stat.label} initial="hidden" animate="visible" variants={fadeUp} custom={i} className="bg-card rounded-xl p-5 border shadow-card">
+              <stat.icon className={`w-5 h-5 ${stat.color} mb-2`} />
+              <div className="font-display text-2xl font-bold text-foreground">{stat.value}</div>
+              <div className="text-xs text-muted-foreground">{stat.label}</div>
+            </motion.div>
+          ))}
+        </div>
+
         <Tabs defaultValue="contrats" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="contrats">Contrats</TabsTrigger>
