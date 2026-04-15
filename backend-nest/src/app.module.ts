@@ -2,15 +2,21 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './users/entities/user.entity';
+import { Constat } from './constats/entities/constat.entity';
+import { ConstatParty } from './constats/entities/constat-party.entity';
 import { UsersModule } from './users/users.module';
 import { AiScoresModule } from './ai_scores/ai_scores.module';
 import { ContractsModule } from './contracts/contracts.module';
+import { ConstatsModule } from './constats/constats.module';
 import { DocumentsModule } from './documents/documents.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['backend-nest/.env', '.env'],
+    }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -21,7 +27,7 @@ import { NotificationsModule } from './notifications/notifications.module';
         username: config.get<string>('DB_USER'),
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
-        entities: [User],
+        entities: [User, Constat, ConstatParty],
         synchronize: false,
         ssl: { rejectUnauthorized: false },
       }),
@@ -29,6 +35,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     UsersModule,
     AiScoresModule,
     ContractsModule,
+    ConstatsModule,
     DocumentsModule,
     NotificationsModule,
   ],

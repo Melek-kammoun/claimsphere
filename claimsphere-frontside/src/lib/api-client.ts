@@ -1,4 +1,7 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:5000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
+  import.meta.env.VITE_NEST_API_URL?.replace(/\/$/, "") ??
+  "/api";
 
 export class ApiError extends Error {
   status: number;
