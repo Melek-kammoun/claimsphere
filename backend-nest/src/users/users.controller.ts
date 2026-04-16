@@ -26,6 +26,13 @@ create(@Body() dto: CreateUserDto) {
   return this.usersService.create(dto);
 }
 
+  @Post('login')
+  login(
+    @Body() body: { identifier: string; password: string },
+  ) {
+    return this.usersService.login(body.identifier, body.password);
+  }
+
   // users/users.controller.ts
 @Delete(':id')
 async remove(@Param('id') id: string) { // ← string au lieu de number

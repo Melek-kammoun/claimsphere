@@ -11,6 +11,7 @@ import { ContratsModule } from './contrats/contrats.module';
 import { DamageAnalysisModule } from './damage-analysis/damage-analysis.module';
 import { DamageAgentModule } from './damage-agent/damage-agent.module';
 import { UsersModule } from './users/users.module';
+import { AgentsModule } from './agents/agents.module';
 import { AiScoresModule } from './ai_scores/ai_scores.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { ConstatsModule } from './constats/constats.module';
@@ -45,6 +46,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     DamageAnalysisModule,
     DamageAgentModule,
     UsersModule,
+    AgentsModule,
     AiScoresModule,
     ContractsModule,
     ConstatsModule,

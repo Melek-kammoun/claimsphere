@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/api-client";
 
 export default function AuthPage() {
   const [searchParams] = useSearchParams();
@@ -19,7 +20,10 @@ export default function AuthPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const [loginForm, setLoginForm] = useState({ cin: "", password: "" });
+  const [loginForm, setLoginForm] = useState({
+    identifier: "",
+    password: "",
+  });
   const [signupForm, setSignupForm] = useState({
     fullName: "",
     cin: "",
@@ -32,7 +36,7 @@ export default function AuthPage() {
 
   const validateLogin = () => {
     const errs: Record<string, string> = {};
-    if (!loginForm.cin.trim()) errs.cin = "Le CIN est requis";
+    if (!loginForm.identifier.trim()) errs.identifier = "L'identifiant est requis";
     if (!loginForm.password) errs.password = "Le mot de passe est requis";
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -53,13 +57,42 @@ export default function AuthPage() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateLogin()) return;
-    toast({ title: "Connexion réussie", description: "Bienvenue sur ClaimSphere !" });
-    navigate("/dashboard");
+    apiRequest<{ role: "admin" | "agent" | "client"; user: { id: string; full_name: string; email: string } }>("/users/login", {
+      method: "POST",
+      body: {
+        identifier: loginForm.identifier.trim(),
+        password: loginForm.password,
+      },
+    })
+      .then((response) => {
+        localStorage.setItem("role", response.role);
+        localStorage.setItem("user", JSON.stringify(response.user));
+        toast({ title: "Connexion réussie", description: "Bienvenue sur ClaimSphere !" });
+        if (response.role === "admin") {
+          navigate("/admin");
+          return;
+        }
+
+        if (response.role === "agent") {
+          navigate("/agent");
+          return;
+        }
+
+        navigate("/dashboard");
+      })
+      .catch((error) => {
+        toast({
+          title: "Connexion impossible",
+          description: error instanceof Error ? error.message : "Identifiant ou mot de passe incorrect.",
+          variant: "destructive",
+        });
+      });
   };
 
   const handleSignup = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateSignup()) return;
+    localStorage.setItem("role", "client");
     toast({ title: "Compte créé avec succès", description: "Un email de confirmation a été envoyé." });
     navigate("/dashboard");
   };
@@ -129,15 +162,15 @@ export default function AuthPage() {
                 className="space-y-5"
               >
                 <div>
-                  <Label htmlFor="cin">Numéro CIN</Label>
+                  <Label htmlFor="identifier">Identifiant, email ou CIN</Label>
                   <Input
-                    id="cin"
-                    placeholder="AB123456"
-                    value={loginForm.cin}
-                    onChange={(e) => setLoginForm({ ...loginForm, cin: e.target.value })}
-                    className={errors.cin ? "border-destructive" : ""}
+                    id="identifier"
+                    placeholder="admin@claimsphere.tn ou 12345678"
+                    value={loginForm.identifier}
+                    onChange={(e) => setLoginForm({ ...loginForm, identifier: e.target.value })}
+                    className={errors.identifier ? "border-destructive" : ""}
                   />
-                  {errors.cin && <p className="text-destructive text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.cin}</p>}
+                  {errors.identifier && <p className="text-destructive text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.identifier}</p>}
                 </div>
                 <div>
                   <Label htmlFor="password">Mot de passe</Label>

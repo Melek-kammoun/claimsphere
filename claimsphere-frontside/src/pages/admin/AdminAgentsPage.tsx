@@ -12,6 +12,9 @@ import {
   Mail,
   Briefcase,
   UserCog,
+  Edit2,
+  Save,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/api-client";
+import { getStoredUserRole, isAdminSession } from "@/lib/auth-role";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -29,52 +33,23 @@ const fadeUp = {
 
 type Agent = {
   id: string;
-  name: string;
+  full_name: string;
   email: string;
-  specialty: string | null;
+  phone?: string;
+  specialty?: string | null;
   status: "Actif" | "En attente" | "Suspendu";
   assignedCases?: number;
+  created_at?: string;
   lastActive?: string;
 };
 
-const initialAgents: Agent[] = [
-  {
-    id: "1",
-    name: "Karim Ben Salah",
-    email: "karim.bensalah@claimsphere.tn",
-    specialty: "Sinistres auto",
-    status: "Actif",
-    assignedCases: 18,
-    lastActive: "Il y a 12 min",
-  },
-  {
-    id: "2",
-    name: "Sara Mzoughi",
-    email: "sara.mzoughi@claimsphere.tn",
-    specialty: "Relation client",
-    status: "Actif",
-    assignedCases: 11,
-    lastActive: "Il y a 1 h",
-  },
-  {
-    id: "3",
-    name: "Oussama Trabelsi",
-    email: "oussama.trabelsi@claimsphere.tn",
-    specialty: "Contrôle fraude",
-    status: "En attente",
-    assignedCases: 4,
-    lastActive: "Hier",
-  },
-  {
-    id: "4",
-    name: "Meriem Laaroussi",
-    email: "meriem.laaroussi@claimsphere.tn",
-    specialty: "Expertise dommages",
-    status: "Suspendu",
-    assignedCases: 0,
-    lastActive: "Il y a 2 semaines",
-  },
-];
+type AgentFormData = {
+  full_name: string;
+  email: string;
+  password: string;
+  phone?: string;
+  specialty?: string;
+};
 
 const statusStyles: Record<Agent["status"], string> = {
   Actif: "bg-success/10 text-success border-success/30",
@@ -82,20 +57,32 @@ const statusStyles: Record<Agent["status"], string> = {
   Suspendu: "bg-destructive/10 text-destructive border-destructive/30",
 };
 
-const API_URL = import.meta.env.VITE_NEST_API_URL || 'http://localhost:5000';
+const SPECIALTIES = [
+  "Sinistres auto",
+  "Relation client",
+  "Contrôle fraude",
+  "Expertise dommages",
+  "Gestion sinistres",
+  "Investigation",
+];
 
 export default function AdminAgentsPage() {
+  const sessionRole = getStoredUserRole();
+  const isAdmin = isAdminSession();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [newAgent, setNewAgent] = useState({
-    name: "",
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<AgentFormData>({
+    full_name: "",
     email: "",
+    password: "",
+    phone: "",
     specialty: "Sinistres auto",
-    status: "Actif" as Agent["status"],
   });
   const { toast } = useToast();
 
@@ -104,24 +91,15 @@ export default function AdminAgentsPage() {
     const fetchAgents = async () => {
       try {
         setLoading(true);
-        const data = await apiRequest<Agent[]>(`${API_URL}/users/agents`);
-        // Normaliser les données avec des valeurs par défaut
-        const normalizedAgents = data.map((agent) => ({
-          ...agent,
-          assignedCases: agent.assignedCases || 0,
-          lastActive: agent.lastActive || "Jamais",
-          specialty: agent.specialty || "Non spécifiée",
-        }));
-        setAgents(normalizedAgents);
+        const data = await apiRequest<Agent[]>("/agents");
+        setAgents(data || []);
       } catch (error) {
         console.error("Erreur lors du chargement des agents:", error);
         toast({
           title: "Erreur",
-          description: "Impossible de charger les agents. Affichage des données par défaut.",
+          description: "Impossible de charger les agents.",
           variant: "destructive",
         });
-        // Afficher les données initiales en cas d'erreur
-        setAgents(initialAgents);
       } finally {
         setLoading(false);
       }
@@ -133,64 +111,66 @@ export default function AdminAgentsPage() {
   const filteredAgents = useMemo(() => {
     return agents.filter((agent) => {
       const matchesSearch =
-        agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        agent.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         agent.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        agent.specialty.toLowerCase().includes(searchQuery.toLowerCase());
+        (agent.specialty?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
       const matchesFilter = filterStatus === "all" || agent.status === filterStatus;
       return matchesSearch && matchesFilter;
     });
   }, [agents, searchQuery, filterStatus]);
 
-  // ─── Ajouter un agent ───
+  // Réinitialiser le formulaire
+  const resetForm = () => {
+    setFormData({
+      full_name: "",
+      email: "",
+      password: "",
+      phone: "",
+      specialty: "Sinistres auto",
+    });
+    setEditingAgentId(null);
+  };
+
+  // Ajouter un agent
   const handleAddAgent = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!newAgent.name.trim() || !newAgent.email.trim()) {
+    if (!formData.full_name.trim() || !formData.email.trim() || !formData.password.trim()) {
       toast({
         title: "Champs requis",
-        description: "Le nom et l'email de l'agent sont obligatoires.",
+        description: "Le nom, l'email et le mot de passe sont obligatoires.",
         variant: "destructive",
       });
       return;
     }
 
-    const name = newAgent.name.trim();
-    const email = newAgent.email.trim();
-
     setIsSubmitting(true);
 
     try {
-      const createdAgent = await apiRequest<Agent>(`${API_URL}/users`, {
+      const createdAgent = await apiRequest<Agent>("/agents", {
         method: "POST",
         body: {
-          name,
-          email,
-          status: newAgent.status,
-          specialty: newAgent.specialty,
-          role: "agent",
-          password: "default",
+          full_name: formData.full_name.trim(),
+          email: formData.email.trim(),
+          password: formData.password,
+          phone: formData.phone || undefined,
+          specialty: formData.specialty || undefined,
         },
       });
-      
-      const agent: Agent = {
-        ...createdAgent,
-        assignedCases: createdAgent.assignedCases || 0,
-        lastActive: createdAgent.lastActive || "À l'instant",
-      };
-      
-      setAgents((current) => [agent, ...current]);
-      setNewAgent({ name: "", email: "", specialty: "Sinistres auto", status: "Actif" });
+
+      setAgents((current) => [createdAgent, ...current]);
+      resetForm();
       setIsAddDialogOpen(false);
 
       toast({
-        title: "Agent ajouté",
-        description: `${name} a été ajouté à l'équipe.`,
+        title: "Agent créé",
+        description: `${formData.full_name} a été ajouté à l'équipe.`,
       });
     } catch (error) {
       console.error("Erreur lors de l'ajout:", error);
       toast({
         title: "Erreur",
-        description: "Impossible d'ajouter l'agent dans la base de données.",
+        description: "Impossible d'ajouter l'agent.",
         variant: "destructive",
       });
     } finally {
@@ -198,20 +178,49 @@ export default function AdminAgentsPage() {
     }
   };
 
-  // ─── Supprimer un agent ───
+  // Modifier le statut d'un agent
+  const handleStatusChange = async (agentId: string, newStatus: "Actif" | "En attente" | "Suspendu") => {
+    try {
+      const updatedAgent = await apiRequest<Agent>(`/agents/${agentId}/status`, {
+        method: "PATCH",
+        body: { status: newStatus },
+      });
+
+      setAgents((current) =>
+        current.map((agent) =>
+          agent.id === agentId ? { ...agent, status: updatedAgent.status } : agent,
+        ),
+      );
+
+      toast({
+        title: "Statut mis à jour",
+        description: `Agent est maintenant ${newStatus.toLowerCase()}.`,
+      });
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour:", error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de mettre à jour le statut.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Supprimer un agent
   const handleDeleteAgent = async (agentId: string) => {
     const agent = agents.find((item) => item.id === agentId);
 
     try {
-      await apiRequest(`${API_URL}/users/${agentId}`, {
+      await apiRequest(`/agents/${agentId}`, {
         method: "DELETE",
       });
 
       setAgents((current) => current.filter((item) => item.id !== agentId));
+      setConfirmDeleteId(null);
 
       toast({
         title: "Agent supprimé",
-        description: agent ? `${agent.name} a été retiré de la liste.` : "L'agent a été retiré.",
+        description: agent ? `${agent.full_name} a été retiré de la liste.` : "L'agent a été retiré.",
       });
     } catch (error) {
       console.error("Erreur lors de la suppression:", error);
@@ -224,11 +233,56 @@ export default function AdminAgentsPage() {
   };
 
   const stats = [
-    { label: "Total agents", value: agents.length, icon: Users, color: "text-primary" },
-    { label: "Actifs", value: agents.filter(a => a.status === "Actif").length, icon: BadgeCheck, color: "text-success" },
-    { label: "En attente", value: agents.filter(a => a.status === "En attente").length, icon: Clock3, color: "text-warning" },
-    { label: "Suspendus", value: agents.filter(a => a.status === "Suspendu").length, icon: AlertTriangle, color: "text-destructive" },
+    {
+      label: "Total agents",
+      value: agents.length,
+      icon: Users,
+      color: "text-primary",
+    },
+    {
+      label: "Actifs",
+      value: agents.filter((a) => a.status === "Actif").length,
+      icon: BadgeCheck,
+      color: "text-success",
+    },
+    {
+      label: "En attente",
+      value: agents.filter((a) => a.status === "En attente").length,
+      icon: Clock3,
+      color: "text-warning",
+    },
+    {
+      label: "Suspendus",
+      value: agents.filter((a) => a.status === "Suspendu").length,
+      icon: AlertTriangle,
+      color: "text-destructive",
+    },
   ];
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="max-w-lg w-full bg-card border shadow-card rounded-2xl p-8 text-center space-y-4">
+          <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
+            <Shield className="w-6 h-6 text-destructive" />
+          </div>
+          <Badge className="bg-destructive/10 text-destructive border-destructive/30">Accès refusé</Badge>
+          <div>
+            <h2 className="font-display text-2xl font-bold text-foreground">Espace admin réservé</h2>
+            <p className="text-sm text-muted-foreground mt-2">
+              Cette page est accessible uniquement aux comptes administrateurs.
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Rôle détecté: {sessionRole || "aucun"}
+            </p>
+          </div>
+          <Button asChild className="bg-gradient-primary text-primary-foreground hover:opacity-90">
+            <a href="/auth">Se connecter avec un compte admin</a>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -247,78 +301,120 @@ export default function AdminAgentsPage() {
             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
               <UserCog className="w-4 h-4 text-primary" />
             </div>
-            <span className="text-sm font-medium text-foreground hidden sm:block">Super admin</span>
+            <Badge className="hidden sm:inline-flex bg-primary/10 text-primary border-primary/20">
+              {sessionRole === "admin" ? "Admin connecté" : "Accès admin"}
+            </Badge>
           </div>
         </div>
       </header>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0} className="flex flex-col lg:flex-row justify-between gap-4">
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          custom={0}
+          className="flex flex-col lg:flex-row justify-between gap-4"
+        >
           <div>
             <h2 className="font-display text-2xl font-bold text-foreground">Gestion des agents</h2>
-            <p className="text-muted-foreground text-sm">Ajoutez des agents, contrôlez leur statut et retirez-les en un clic.</p>
+            <p className="text-muted-foreground text-sm">
+              Ajoutez des agents, contrôlez leur statut et gérez les équipes.
+            </p>
           </div>
 
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-gradient-primary text-primary-foreground hover:opacity-90">
-                <UserPlus className="w-4 h-4 mr-2" /> Ajouter un agent
+                <UserPlus className="w-4 h-4 mr-2" /> Créer un agent
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle className="font-display">Nouvel agent</DialogTitle>
+                <DialogTitle className="font-display">Créer un nouvel agent</DialogTitle>
               </DialogHeader>
               <form className="space-y-4 mt-4" onSubmit={handleAddAgent}>
                 <div className="space-y-2">
-                  <Label>Nom complet</Label>
+                  <Label>Nom complet *</Label>
                   <Input
-                    value={newAgent.name}
-                    onChange={(e) => setNewAgent(c => ({ ...c, name: e.target.value }))}
+                    value={formData.full_name}
+                    onChange={(e) => setFormData((c) => ({ ...c, full_name: e.target.value }))}
                     placeholder="Ex. Amel Jaziri"
+                    required
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Email</Label>
+                  <Label>Email *</Label>
                   <div className="relative">
                     <Input
                       type="email"
-                      value={newAgent.email}
-                      onChange={(e) => setNewAgent(c => ({ ...c, email: e.target.value }))}
+                      value={formData.email}
+                      onChange={(e) => setFormData((c) => ({ ...c, email: e.target.value }))}
                       placeholder="agent@claimsphere.tn"
+                      required
                     />
                     <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Mot de passe *</Label>
+                  <Input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData((c) => ({ ...c, password: e.target.value }))}
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Téléphone</Label>
+                  <Input
+                    value={formData.phone}
+                    onChange={(e) => setFormData((c) => ({ ...c, phone: e.target.value }))}
+                    placeholder="+216 XX XXX XXX"
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label>Spécialité</Label>
-                  <Select value={newAgent.specialty} onValueChange={(v) => setNewAgent(c => ({ ...c, specialty: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Choisir une spécialité" /></SelectTrigger>
+                  <Select
+                    value={formData.specialty}
+                    onValueChange={(v) => setFormData((c) => ({ ...c, specialty: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Sinistres auto">Sinistres auto</SelectItem>
-                      <SelectItem value="Relation client">Relation client</SelectItem>
-                      <SelectItem value="Contrôle fraude">Contrôle fraude</SelectItem>
-                      <SelectItem value="Expertise dommages">Expertise dommages</SelectItem>
+                      {SPECIALTIES.map((specialty) => (
+                        <SelectItem key={specialty} value={specialty}>
+                          {specialty}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Statut</Label>
-                  <Select value={newAgent.status} onValueChange={(v) => setNewAgent(c => ({ ...c, status: v as Agent["status"] }))}>
-                    <SelectTrigger><SelectValue placeholder="Choisir un statut" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Actif">Actif</SelectItem>
-                      <SelectItem value="En attente">En attente</SelectItem>
-                      <SelectItem value="Suspendu">Suspendu</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+
                 <div className="flex gap-3 pt-2">
-                  <Button type="button" variant="outline" className="flex-1" onClick={() => setIsAddDialogOpen(false)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      resetForm();
+                      setIsAddDialogOpen(false);
+                    }}
+                  >
                     Annuler
                   </Button>
-                  <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gradient-primary text-primary-foreground hover:opacity-90">
-                    {isSubmitting ? "Ajout..." : "Créer l'agent"}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 bg-gradient-primary text-primary-foreground hover:opacity-90"
+                  >
+                    {isSubmitting ? "Création..." : "Créer l'agent"}
                   </Button>
                 </div>
               </form>
@@ -329,7 +425,14 @@ export default function AdminAgentsPage() {
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {stats.map((stat, index) => (
-            <motion.div key={stat.label} initial="hidden" animate="visible" variants={fadeUp} custom={index + 1} className="bg-card rounded-xl p-5 border shadow-card">
+            <motion.div
+              key={stat.label}
+              initial="hidden"
+              animate="visible"
+              variants={fadeUp}
+              custom={index + 1}
+              className="bg-card rounded-xl p-5 border shadow-card"
+            >
               <div className="flex items-center justify-between mb-3">
                 <stat.icon className={`w-5 h-5 ${stat.color}`} />
               </div>
@@ -346,7 +449,7 @@ export default function AdminAgentsPage() {
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Rechercher un agent, un email ou une spécialité..."
+              placeholder="Rechercher par nom, email ou spécialité..."
               className="pl-10"
             />
           </div>
@@ -371,7 +474,9 @@ export default function AdminAgentsPage() {
             </div>
           ) : filteredAgents.length === 0 ? (
             <div className="bg-card rounded-xl border shadow-card p-8 text-center text-muted-foreground">
-              Aucun agent ne correspond à votre recherche.
+              {searchQuery || filterStatus !== "all"
+                ? "Aucun agent ne correspond à votre recherche."
+                : "Aucun agent créé pour le moment."}
             </div>
           ) : (
             filteredAgents.map((agent, index) => (
@@ -383,26 +488,78 @@ export default function AdminAgentsPage() {
                 className="bg-card rounded-xl border shadow-card p-5"
               >
                 <div className="flex flex-col lg:flex-row justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <span className="font-display font-bold text-foreground">{agent.name}</span>
+                  <div className="flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-display font-bold text-foreground">{agent.full_name}</span>
                       <Badge variant="outline" className={statusStyles[agent.status]}>
                         {agent.status}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">{agent.email}</p>
-                    <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-                      <Briefcase className="w-4 h-4" /> {agent.specialty}
+                    {agent.phone && (
+                      <p className="text-sm text-muted-foreground">{agent.phone}</p>
+                    )}
+                    {agent.specialty && (
+                      <p className="text-sm text-muted-foreground flex items-center gap-2">
+                        <Briefcase className="w-4 h-4" /> {agent.specialty}
+                      </p>
+                    )}
+                    {agent.assignedCases !== undefined && (
+                      <p className="text-sm text-muted-foreground">
+                        Dossiers assignés: <span className="text-foreground font-medium">{agent.assignedCases}</span>
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Dernière activité: {agent.lastActive || "Jamais connecté"}
                     </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Dossiers assignés: <span className="text-foreground font-medium">{agent.assignedCases}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">Dernière activité: {agent.lastActive}</p>
                   </div>
-                  <div className="flex gap-2 self-start">
-                    <Button variant="destructive" size="sm" onClick={() => handleDeleteAgent(agent.id)}>
-                      <Trash2 className="w-4 h-4 mr-1" /> Supprimer
-                    </Button>
+
+                  <div className="flex flex-col gap-2 self-start">
+                    <Select
+                      value={agent.status}
+                      onValueChange={(value) =>
+                        handleStatusChange(agent.id, value as Agent["status"])
+                      }
+                    >
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Actif">Actif</SelectItem>
+                        <SelectItem value="En attente">En attente</SelectItem>
+                        <SelectItem value="Suspendu">Suspendu</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {confirmDeleteId === agent.id ? (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeleteAgent(agent.id)}
+                          className="flex-1"
+                        >
+                          Confirmer
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="flex-1"
+                        >
+                          Annuler
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setConfirmDeleteId(agent.id)}
+                        className="w-full"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Supprimer
+                      </Button>
+                    )}
                   </div>
                 </div>
               </motion.div>

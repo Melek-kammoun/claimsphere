@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: ["urethane-guidance-spousal.ngrok-free.dev"],
+    allowedHosts: true,
     proxy: {
       "/api": {
         target: "http://localhost:5000",

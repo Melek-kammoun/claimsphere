@@ -2,12 +2,22 @@
 import {
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { v4 as uuidv4 } from 'uuid';
+
+export type LoginResponse = {
+  role: 'admin' | 'agent' | 'client';
+  user: {
+    id: string;
+    full_name: string;
+    email: string;
+  };
+};
 
 type UserView = User & { name: string };
 
@@ -115,5 +125,53 @@ export class UsersService {
     await this.usersRepository.manager.transaction(async (manager) => {
       await manager.query('DELETE FROM auth.users WHERE id = $1', [id]);
     });
+  }
+
+  async login(identifier: string, password: string): Promise<LoginResponse> {
+    const rows = await this.usersRepository.manager.query(
+      `
+        SELECT
+          u.id,
+          u.full_name,
+          u.role AS public_role,
+          au.email,
+          au.encrypted_password,
+          au.raw_user_meta_data
+        FROM public.users u
+        INNER JOIN auth.users au ON au.id = u.id
+        WHERE au.email = $1
+           OR u.contract_number::text = $1
+           OR u.full_name ILIKE $2
+        LIMIT 1
+      `,
+      [identifier, `%${identifier}%`],
+    );
+
+    const user = rows?.[0];
+
+    if (!user) {
+      throw new UnauthorizedException('Identifiant invalide');
+    }
+
+    const passwordCheck = await this.usersRepository.manager.query(
+      `SELECT crypt($1, $2) = $2 AS is_valid`,
+      [password, user.encrypted_password],
+    );
+
+    if (!passwordCheck?.[0]?.is_valid) {
+      throw new UnauthorizedException('Mot de passe invalide');
+    }
+
+    const metadataRole = user.raw_user_meta_data?.role;
+    const role = (metadataRole || user.public_role || 'client') as LoginResponse['role'];
+
+    return {
+      role,
+      user: {
+        id: user.id,
+        full_name: user.full_name || '',
+        email: user.email || '',
+      },
+    };
   }
 }

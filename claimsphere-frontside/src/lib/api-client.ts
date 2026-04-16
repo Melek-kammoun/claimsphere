@@ -28,6 +28,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(localStorage.getItem("role") ? { "x-user-role": localStorage.getItem("role") as string } : {}),
       ...(options.headers ?? {}),
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -40,8 +41,12 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   if (!response.ok) {
     const message =
-      typeof payload === "object" && payload !== null && "error" in payload
-        ? String(payload.error)
+      typeof payload === "object" && payload !== null
+        ? "message" in payload
+          ? String(payload.message)
+          : "error" in payload
+            ? String(payload.error)
+            : "Une erreur est survenue pendant l'appel API."
         : "Une erreur est survenue pendant l'appel API.";
 
     throw new ApiError(message, response.status, payload);
