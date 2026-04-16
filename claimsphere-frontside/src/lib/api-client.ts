@@ -3,7 +3,6 @@ const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http:/
 if (!import.meta.env.VITE_API_URL) {
   console.warn("VITE_API_URL non défini, utilisation de http://localhost:5000");
 }
-
 export class ApiError extends Error {
   status: number;
   details: unknown;
@@ -22,8 +21,9 @@ type ApiRequestOptions = Omit<RequestInit, "body"> & {
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const token = localStorage.getItem("token");
+  const url = /^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path}`;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
