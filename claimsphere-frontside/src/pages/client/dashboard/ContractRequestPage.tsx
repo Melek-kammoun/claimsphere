@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useVehicleEstimate } from "@/hooks/use-vehicle-estimate";
+import { apiRequest } from "@/lib/api-client";
 
 const OFFER_OPTIONS = [
   { label: "Serenite", value: "Serenite" },
@@ -11,9 +12,18 @@ const OFFER_OPTIONS = [
   { label: "Securite", value: "Securite" },
 ] as const;
 
+const calculateEndDate = (startDate: string, dureeType: string): string => {
+  const date = new Date(startDate);
+  if (dureeType === "An") date.setFullYear(date.getFullYear() + 1);
+  else date.setMonth(date.getMonth() + 1);
+  return date.toISOString().split("T")[0];
+};
+
 export default function ContractRequestPage() {
   const navigate = useNavigate();
   const estimateMutation = useVehicleEstimate();
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
     type: "Serenite",
     dateDebut: "",
@@ -71,15 +81,28 @@ export default function ContractRequestPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log("Nouvelle demande de contrat", {
-      ...form,
-      estimatedValue,
-      prime: backendPrime,
-      warning,
-    });
-    navigate("/dashboard/contracts");
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      await apiRequest("/contracts", {
+        method: "POST",
+        body: {
+          type: form.type,
+          start_date: form.dateDebut,
+          end_date: calculateEndDate(form.dateDebut, form.dureeType),
+          status: "En attente",
+          montant_declare: Number(form.montantDeclare),
+          marque: `${form.vehiculeMarque} ${form.vehiculeModele}`.trim(),
+        },
+      });
+      navigate("/dashboard/contracts");
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Erreur lors de la création du contrat.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -137,7 +160,6 @@ export default function ContractRequestPage() {
 
           <div className="rounded-lg border bg-slate-50 p-4">
             <p className="text-sm text-muted-foreground">Estimation retournee par le backend :</p>
-
             <div className="mt-3">
               <Button
                 type="button"
@@ -148,7 +170,6 @@ export default function ContractRequestPage() {
                 {estimateMutation.isPending ? "Estimation..." : "Estimer depuis le backend"}
               </Button>
             </div>
-
             <p className="mt-2 text-sm text-muted-foreground">
               Valeur estimee : {estimatedValue !== null ? `${estimatedValue.toFixed(2)} DH` : "Non estimee"}
             </p>
@@ -159,9 +180,13 @@ export default function ContractRequestPage() {
             {estimateError ? <p className="mt-2 text-sm text-red-600">{estimateError}</p> : null}
           </div>
 
+          {submitError && (
+            <p className="text-sm text-red-600">{submitError}</p>
+          )}
+
           <div className="flex gap-3">
-            <Button type="submit" className="bg-primary text-primary-foreground">
-              Envoyer la demande
+            <Button type="submit" disabled={submitting} className="bg-primary text-primary-foreground">
+              {submitting ? "Envoi en cours..." : "Envoyer la demande"}
             </Button>
             <Button variant="ghost" type="button" onClick={() => navigate("/dashboard/contracts")}>
               Annuler

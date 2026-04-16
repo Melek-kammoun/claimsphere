@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDashboard } from "@/hooks/useDashboard";
+import { DocumentUpload } from "@/components/DocumentUpload";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -125,6 +126,11 @@ export default function DashboardHome() {
           </div>
         </motion.div>
       </div>
+
+      {/* document Upload Section */}
+      <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={7}>
+  <DocumentUpload />
+</motion.div>
     </div>
   );
 }

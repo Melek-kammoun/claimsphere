@@ -10,7 +10,11 @@ import { ContractsModule } from './contracts/contracts.module';
 import { DocumentsModule } from './documents/documents.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuthModule } from './auth/auth.module';
-
+import { OcrModule } from './ocr/ocr.module';
+import { Claim } from './ocr/entities/claim.entity';
+import { PvPolice } from './ocr/entities/pv-police.entity';
+import { RapportExpert } from './ocr/entities/rapport-expert.entity';
+import { Devis } from './ocr/entities/devis.entity';
 
 @Module({
   imports: [
@@ -25,7 +29,7 @@ import { AuthModule } from './auth/auth.module';
         username: config.get<string>('DB_USER'),
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
-        entities: [User],
+        entities: [User, PvPolice, RapportExpert, Devis],
         synchronize: false,
         ssl: { rejectUnauthorized: false },
       }),
@@ -35,6 +39,7 @@ import { AuthModule } from './auth/auth.module';
     ContractsModule,
     DocumentsModule,
     NotificationsModule,
+    OcrModule,
   ],
   controllers: [AppController],
   providers: [AppService],
