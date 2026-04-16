@@ -28,11 +28,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/typeorm": "^11.0.0",
     "@supabase/supabase-js": "^2.101.1",
-<<<<<<< HEAD
-    "class-transformer": "^0.5.1",
-    "class-validator": "^0.15.1",
-    "openai": "^6.33.0",
-=======
+
     "@types/nodemailer": "^8.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -42,7 +38,6 @@
     "pdf-lib": "^1.17.1",
     "pg": "^8.20.0",
     "qrcode": "^1.5.4",
->>>>>>> origin/bayrem
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.28",
