@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+<<<<<<< HEAD
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -15,10 +16,18 @@ import { Claim } from './ocr/entities/claim.entity';
 import { PvPolice } from './ocr/entities/pv-police.entity';
 import { RapportExpert } from './ocr/entities/rapport-expert.entity';
 import { Devis } from './ocr/entities/devis.entity';
+=======
+import { ConfigModule } from '@nestjs/config';
+import { SupabaseModule } from './supabase/supabase.module';
+import { ClaimsModule } from './claims/claims.module';
+import { EstimateModule } from './estimate/estimate.module';
+import { ContratsModule } from './contrats/contrats.module';
+>>>>>>> 0a3bc8fb7f4661c42eb048734db850d0386544ec
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+<<<<<<< HEAD
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule, AuthModule],
       inject: [ConfigService],
@@ -40,6 +49,12 @@ import { Devis } from './ocr/entities/devis.entity';
     DocumentsModule,
     NotificationsModule,
     OcrModule,
+=======
+    SupabaseModule,
+    ClaimsModule,
+    EstimateModule,
+    ContratsModule,
+>>>>>>> 0a3bc8fb7f4661c42eb048734db850d0386544ec
   ],
   controllers: [AppController],
   providers: [AppService],

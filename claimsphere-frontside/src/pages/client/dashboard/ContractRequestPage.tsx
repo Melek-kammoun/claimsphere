@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { useCreateContrat } from "@/hooks/use-contrats";
 import { useVehicleEstimate } from "@/hooks/use-vehicle-estimate";
 import { apiRequest } from "@/lib/api-client";
 
@@ -12,18 +14,13 @@ const OFFER_OPTIONS = [
   { label: "Securite", value: "Securite" },
 ] as const;
 
-const calculateEndDate = (startDate: string, dureeType: string): string => {
-  const date = new Date(startDate);
-  if (dureeType === "An") date.setFullYear(date.getFullYear() + 1);
-  else date.setMonth(date.getMonth() + 1);
-  return date.toISOString().split("T")[0];
-};
+const DEFAULT_CLIENT_ID = "4904a8fa-1242-4f12-affa-725ec84e4e4d";
 
 export default function ContractRequestPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const estimateMutation = useVehicleEstimate();
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const createContratMutation = useCreateContrat();
   const [form, setForm] = useState({
     type: "Serenite",
     dateDebut: "",
@@ -83,25 +80,46 @@ export default function ContractRequestPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setSubmitError(null);
-    setSubmitting(true);
+
     try {
-      await apiRequest("/contracts", {
-        method: "POST",
-        body: {
-          type: form.type,
-          start_date: form.dateDebut,
-          end_date: calculateEndDate(form.dateDebut, form.dureeType),
-          status: "En attente",
-          montant_declare: Number(form.montantDeclare),
-          marque: `${form.vehiculeMarque} ${form.vehiculeModele}`.trim(),
-        },
+      await createContratMutation.mutateAsync({
+        client_id: DEFAULT_CLIENT_ID,
+        type: form.type,
+        start_date: form.dateDebut || undefined,
+        status: "non_traite",
+        montant_declare: form.montantDeclare
+          ? Number(form.montantDeclare)
+          : undefined,
+        marque: form.vehiculeMarque || undefined,
+        modele: form.vehiculeModele || undefined,
+        age: form.ageVehicule ? Number(form.ageVehicule) : undefined,
+        kilometrage: form.kilometrage ? Number(form.kilometrage) : undefined,
+        serie: form.immatriculationChiffres
+          ? Number(form.immatriculationChiffres)
+          : undefined,
+        num_voiture: form.immatriculationLettres
+          ? Number(form.immatriculationLettres.replace(/\D/g, ""))
+          : undefined,
+        prime: backendPrime ?? undefined,
+        valeur_estimee: estimatedValue ?? undefined,
+      });
+
+      toast({
+        title: "Contrat cree",
+        description: "La demande de contrat a ete envoyee.",
       });
       navigate("/dashboard/contracts");
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Erreur lors de la création du contrat.");
-    } finally {
-      setSubmitting(false);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Impossible de creer le contrat.";
+
+      toast({
+        title: "Echec de creation",
+        description: message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -185,8 +203,10 @@ export default function ContractRequestPage() {
           )}
 
           <div className="flex gap-3">
-            <Button type="submit" disabled={submitting} className="bg-primary text-primary-foreground">
-              {submitting ? "Envoi en cours..." : "Envoyer la demande"}
+            <Button type="submit" className="bg-primary text-primary-foreground">
+              {createContratMutation.isPending
+                ? "Envoi en cours..."
+                : "Envoyer la demande"}
             </Button>
             <Button variant="ghost" type="button" onClick={() => navigate("/dashboard/contracts")}>
               Annuler

@@ -6,9 +6,11 @@ export class ClaimsService {
   constructor(private supabase: SupabaseService) {}
 
   async getAllClaims() {
-    const { data, error } = await this.supabase.getClient()
+    const { data, error } = await this.supabase
+      .getClient()
       .from('claims')
-      .select(`
+      .select(
+        `
         id,
         status,
         description,
@@ -21,7 +23,8 @@ export class ClaimsService {
           score,
           risk_level
         )
-      `)
+      `,
+      )
       .eq('status', 'non_traite');
 
     if (error) throw new Error(error.message);
@@ -29,7 +32,8 @@ export class ClaimsService {
   }
 
   async approveClaim(id: number) {
-    const { error } = await this.supabase.getClient()
+    const { error } = await this.supabase
+      .getClient()
       .from('claims')
       .update({ status: 'approuve' })
       .eq('id', id);
@@ -39,7 +43,8 @@ export class ClaimsService {
   }
 
   async rejectClaim(id: number) {
-    const { error } = await this.supabase.getClient()
+    const { error } = await this.supabase
+      .getClient()
       .from('claims')
       .update({ status: 'refuse' })
       .eq('id', id);
