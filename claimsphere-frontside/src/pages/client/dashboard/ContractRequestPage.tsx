@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,13 +14,14 @@ const OFFER_OPTIONS = [
   { label: "Securite", value: "Securite" },
 ] as const;
 
-const DEFAULT_CLIENT_ID = "4904a8fa-1242-4f12-affa-725ec84e4e4d";
-
 export default function ContractRequestPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const estimateMutation = useVehicleEstimate();
   const createContratMutation = useCreateContrat();
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  
   const [form, setForm] = useState({
     type: "Serenite",
     dateDebut: "",
@@ -37,6 +38,29 @@ export default function ContractRequestPage() {
   const [backendPrime, setBackendPrime] = useState<number | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // ✅ GET CURRENT USER ID ON MOUNT
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await apiRequest<{ success: boolean; user: { id: string } }>("/users/me");
+        const userId = response.user?.id;
+        console.log("Current user ID:", userId);
+        setCurrentUserId(userId || null);
+      } catch (error) {
+        console.error("Failed to fetch current user:", error);
+        toast({
+          title: "Erreur",
+          description: "Impossible de charger vos informations.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCurrentUser();
+  }, [toast]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -80,10 +104,16 @@ export default function ContractRequestPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setSubmitError(null);
+
+    if (!currentUserId) {
+      setSubmitError("Erreur: Impossible de charger vos informations.");
+      return;
+    }
 
     try {
       await createContratMutation.mutateAsync({
-        client_id: DEFAULT_CLIENT_ID,
+        client_id: currentUserId, // ✅ USE CURRENT USER ID
         type: form.type,
         start_date: form.dateDebut || undefined,
         status: "non_traite",
@@ -115,6 +145,7 @@ export default function ContractRequestPage() {
           ? error.message
           : "Impossible de creer le contrat.";
 
+      setSubmitError(message);
       toast({
         title: "Echec de creation",
         description: message,
@@ -122,6 +153,14 @@ export default function ContractRequestPage() {
       });
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen p-6 flex items-center justify-center">
+        <p className="text-muted-foreground">Chargement...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-6">

@@ -11,7 +11,7 @@ export class PvPolice {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'text', unique: true })
+  @Column({ type: 'text', nullable: true })
   pv_number: string;
 
   @Column({ type: 'date' })

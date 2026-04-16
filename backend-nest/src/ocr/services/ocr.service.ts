@@ -92,6 +92,8 @@ export class OcrService {
 
       const userPrompt = `Extract data from this police accident report:\n\n${text}`;
 
+      console.log('🤖 Sending PV Police to OpenAI for parsing...');
+
       const response = await this.openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -104,6 +106,7 @@ export class OcrService {
       const content = response.choices[0].message.content;
 
       if (!content) {
+        console.error('❌ No response from OpenAI');
         return {
           error: 'No response from OpenAI',
           confidence: 0,
@@ -111,9 +114,12 @@ export class OcrService {
       }
 
       try {
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        console.log('✅ PV Police parsed successfully');
+        return parsed;
       } catch (parseError) {
-        console.error('JSON parse error:', parseError);
+        console.error('❌ JSON parse error:', parseError);
+        console.error('Raw response:', content);
         return {
           raw_text: text,
           error: 'Could not parse PV Police data',
@@ -121,7 +127,7 @@ export class OcrService {
         };
       }
     } catch (error) {
-      console.error('Error parsing PV Police:', error);
+      console.error('❌ Error parsing PV Police:', error);
       throw error;
     }
   }
@@ -156,6 +162,8 @@ export class OcrService {
 
       const userPrompt = `Extract data from this expert inspection report:\n\n${text}`;
 
+      console.log('🤖 Sending Rapport Expert to OpenAI for parsing...');
+
       const response = await this.openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -168,6 +176,7 @@ export class OcrService {
       const content = response.choices[0].message.content;
 
       if (!content) {
+        console.error('❌ No response from OpenAI');
         return {
           error: 'No response from OpenAI',
           confidence: 0,
@@ -175,9 +184,12 @@ export class OcrService {
       }
 
       try {
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        console.log('✅ Rapport Expert parsed successfully');
+        return parsed;
       } catch (parseError) {
-        console.error('JSON parse error:', parseError);
+        console.error('❌ JSON parse error:', parseError);
+        console.error('Raw response:', content);
         return {
           raw_text: text,
           error: 'Could not parse Rapport Expert data',
@@ -185,7 +197,7 @@ export class OcrService {
         };
       }
     } catch (error) {
-      console.error('Error parsing Rapport Expert:', error);
+      console.error('❌ Error parsing Rapport Expert:', error);
       throw error;
     }
   }
@@ -219,6 +231,8 @@ export class OcrService {
 
       const userPrompt = `Extract data from this repair quote:\n\n${text}`;
 
+      console.log('🤖 Sending Devis to OpenAI for parsing...');
+
       const response = await this.openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -231,6 +245,7 @@ export class OcrService {
       const content = response.choices[0].message.content;
 
       if (!content) {
+        console.error('❌ No response from OpenAI');
         return {
           error: 'No response from OpenAI',
           confidence: 0,
@@ -238,9 +253,12 @@ export class OcrService {
       }
 
       try {
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        console.log('✅ Devis parsed successfully');
+        return parsed;
       } catch (parseError) {
-        console.error('JSON parse error:', parseError);
+        console.error('❌ JSON parse error:', parseError);
+        console.error('Raw response:', content);
         return {
           raw_text: text,
           error: 'Could not parse Devis data',
@@ -248,7 +266,7 @@ export class OcrService {
         };
       }
     } catch (error) {
-      console.error('Error parsing Devis:', error);
+      console.error('❌ Error parsing Devis:', error);
       throw error;
     }
   }
@@ -262,14 +280,17 @@ export class OcrService {
         throw new Error('No file uploaded');
       }
 
-      console.log(`Processing PV Police: ${file.originalname}`);
+      console.log(`🔍 Processing PV Police: ${file.originalname}`);
+      console.log(`📄 File size: ${file.size} bytes`);
 
       // Extract text
       let extractedText = await this.extractTextFromPDF(file.buffer);
+      console.log(`📝 Extracted text length: ${extractedText.length}`);
 
       if (!extractedText || extractedText.trim().length === 0) {
-        console.log('Running OCR on scanned PV Police...');
+        console.log('⚠️ No text found. Running OCR on scanned PV Police...');
         extractedText = await this.runOCR(file.buffer);
+        console.log(`🔤 OCR text length: ${extractedText.length}`);
       }
 
       if (!extractedText || extractedText.trim().length === 0) {
@@ -278,6 +299,7 @@ export class OcrService {
 
       // Parse with OpenAI
       const pvData = await this.parsePvPolice(extractedText);
+      console.log('✅ PV Police data extracted:', pvData);
 
       // Save to database
       const pvPolice = this.pvPoliceRepository.create({
@@ -305,6 +327,7 @@ export class OcrService {
       });
 
       const savedPvPolice = await this.pvPoliceRepository.save(pvPolice);
+      console.log('💾 PV Police saved to database:', savedPvPolice.id);
 
       return {
         success: true,
@@ -313,7 +336,7 @@ export class OcrService {
         extractedData: pvData,
       };
     } catch (error) {
-      console.error('PV Police processing error:', error);
+      console.error('❌ PV Police processing error:', error);
       throw error;
     }
   }
@@ -327,14 +350,17 @@ export class OcrService {
         throw new Error('No file uploaded');
       }
 
-      console.log(`Processing Rapport Expert: ${file.originalname}`);
+      console.log(`🔍 Processing Rapport Expert: ${file.originalname}`);
+      console.log(`📄 File size: ${file.size} bytes`);
 
       // Extract text
       let extractedText = await this.extractTextFromPDF(file.buffer);
+      console.log(`📝 Extracted text length: ${extractedText.length}`);
 
       if (!extractedText || extractedText.trim().length === 0) {
-        console.log('Running OCR on scanned Rapport Expert...');
+        console.log('⚠️ No text found. Running OCR on scanned Rapport Expert...');
         extractedText = await this.runOCR(file.buffer);
+        console.log(`🔤 OCR text length: ${extractedText.length}`);
       }
 
       if (!extractedText || extractedText.trim().length === 0) {
@@ -343,6 +369,7 @@ export class OcrService {
 
       // Parse with OpenAI
       const expertData = await this.parseRapportExpert(extractedText);
+      console.log('✅ Rapport Expert data extracted:', expertData);
 
       // Save to database
       const rapportExpert = this.rapportExpertRepository.create({
@@ -369,6 +396,7 @@ export class OcrService {
       });
 
       const savedRapportExpert = await this.rapportExpertRepository.save(rapportExpert);
+      console.log('💾 Rapport Expert saved to database:', savedRapportExpert.id);
 
       return {
         success: true,
@@ -377,7 +405,7 @@ export class OcrService {
         extractedData: expertData,
       };
     } catch (error) {
-      console.error('Rapport Expert processing error:', error);
+      console.error('❌ Rapport Expert processing error:', error);
       throw error;
     }
   }
@@ -391,14 +419,17 @@ export class OcrService {
         throw new Error('No file uploaded');
       }
 
-      console.log(`Processing Devis: ${file.originalname}`);
+      console.log(`🔍 Processing Devis: ${file.originalname}`);
+      console.log(`📄 File size: ${file.size} bytes`);
 
       // Extract text
       let extractedText = await this.extractTextFromPDF(file.buffer);
+      console.log(`📝 Extracted text length: ${extractedText.length}`);
 
       if (!extractedText || extractedText.trim().length === 0) {
-        console.log('Running OCR on scanned Devis...');
+        console.log('⚠️ No text found. Running OCR on scanned Devis...');
         extractedText = await this.runOCR(file.buffer);
+        console.log(`🔤 OCR text length: ${extractedText.length}`);
       }
 
       if (!extractedText || extractedText.trim().length === 0) {
@@ -407,6 +438,7 @@ export class OcrService {
 
       // Parse with OpenAI
       const devisData = await this.parseDevis(extractedText);
+      console.log('✅ Devis data extracted:', devisData);
 
       // Save to database
       const devis = this.devisRepository.create({
@@ -432,6 +464,7 @@ export class OcrService {
       });
 
       const savedDevis = await this.devisRepository.save(devis);
+      console.log('💾 Devis saved to database:', savedDevis.id);
 
       return {
         success: true,
@@ -440,7 +473,7 @@ export class OcrService {
         extractedData: devisData,
       };
     } catch (error) {
-      console.error('Devis processing error:', error);
+      console.error('❌ Devis processing error:', error);
       throw error;
     }
   }

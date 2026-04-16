@@ -5,7 +5,7 @@ export class Devis {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'text', unique: true })
+  @Column({ type: 'text', nullable: true })
   reference: string;
 
   @Column({ type: 'date', nullable: true })

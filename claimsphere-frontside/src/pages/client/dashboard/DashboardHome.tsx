@@ -7,7 +7,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDashboard } from "@/hooks/useDashboard";
-import { DocumentUpload } from "@/components/DocumentUpload";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -23,13 +22,21 @@ const statusColors: Record<string, string> = {
 export default function DashboardHome() {
   const { user, stats, contracts, notifications, loading } = useDashboard();
 
+  console.log('🔍 [DashboardHome] Current state:', {
+    user,
+    stats,
+    contracts,
+    notifications,
+    loading,
+  });
+
   return (
     <div className="space-y-6">
       {/* Welcome */}
       <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="font-display text-2xl font-bold text-foreground">
-            Bonjour, {loading ? "..." : user?.full_name ?? "là"} 👋
+            Bonjour, {loading ? "Chargement..." : user?.full_name ?? user?.email ?? "Guest"} 👋
           </h2>
           <p className="text-muted-foreground text-sm">Voici un résumé de votre espace assurance.</p>
         </div>
@@ -126,11 +133,6 @@ export default function DashboardHome() {
           </div>
         </motion.div>
       </div>
-
-      {/* document Upload Section */}
-      <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={7}>
-  <DocumentUpload />
-</motion.div>
     </div>
   );
 }

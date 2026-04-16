@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
-import { ClaimsController } from './claims.controller';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Claim } from './entities/claim.entity';
 import { ClaimsService } from './claims.service';
-import { SupabaseModule } from '../supabase/supabase.module';
+import { ClaimsController } from './claims.controller';
 
 @Module({
-  imports: [SupabaseModule],
-  controllers: [ClaimsController],
+  imports: [TypeOrmModule.forFeature([Claim])],
   providers: [ClaimsService],
+  controllers: [ClaimsController],
+  exports: [ClaimsService],
 })
 export class ClaimsModule {}

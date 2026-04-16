@@ -29,7 +29,7 @@ export default function ContractsPage() {
   useEffect(() => {
     const fetchContracts = async () => {
       try {
-        const data = await apiRequest<Contract[]>("/contracts");
+        const data = await apiRequest<Contract[]>("/api/contrats");
         setContracts(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
@@ -77,8 +77,7 @@ export default function ContractsPage() {
                     </div>
                     <div>
                       <h3 className="font-display font-bold text-foreground">{c.marque}</h3>
-                      <p className="text-sm text-muted-foreground">#{c.id.slice(0, 8)} · {c.type}</p>
-                    </div>
+                      <p className="text-sm text-muted-foreground">#{String(c.id).slice(0, 8)} · {c.type}</p>                    </div>
                   </div>
                   <Badge
                     variant="outline"
