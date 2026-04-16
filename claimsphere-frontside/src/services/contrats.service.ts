@@ -9,6 +9,8 @@ export type Contrat = {
   status: string;
   created_at: string;
   montant_declare?: number | null;
+  contract_number?: string | null;
+  contract_reference?: string | null;
   marque?: string | null;
   modele?: string | null;
   age?: number | null;
@@ -26,6 +28,8 @@ export type CreateContratPayload = {
   end_date?: string;
   status?: string;
   montant_declare?: number;
+  contract_number?: string;
+  contract_reference?: string;
   marque?: string;
   modele?: string;
   age?: number;

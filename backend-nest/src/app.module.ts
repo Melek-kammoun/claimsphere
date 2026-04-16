@@ -4,6 +4,8 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { ClaimsModule } from './claims/claims.module';
 import { EstimateModule } from './estimate/estimate.module';
 import { ContratsModule } from './contrats/contrats.module';
+import { DamageAnalysisModule } from './damage-analysis/damage-analysis.module';
+import { DamageAgentModule } from './damage-agent/damage-agent.module';
 
 @Module({
   imports: [
@@ -12,6 +14,8 @@ import { ContratsModule } from './contrats/contrats.module';
     ClaimsModule,
     EstimateModule,
     ContratsModule,
+    DamageAnalysisModule,
+    DamageAgentModule,
   ],
 })
 export class AppModule {}
