@@ -29,7 +29,7 @@ export class DamageAgentController {
     @Body() body: DamageAgentRequestDto,
   ) {
     if (!file) {
-      throw new BadRequestException('Le fichier image est requis dans le champ "image".');
+      throw new BadRequestException("Le fichier image est requis dans le champ 'image'.");
     }
 
     if (!file.mimetype?.startsWith('image/')) {

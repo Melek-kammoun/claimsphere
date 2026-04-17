@@ -8,7 +8,7 @@ import {
   DamageAgentDecision,
   VehicleDetails,
 } from './damage-agent.types';
-
+ 
 type DatasetRow = {
   brand: string;
   model: string;
@@ -17,12 +17,12 @@ type DatasetRow = {
   severity: string;
   price_tnd: number;
 };
-
+ 
 @Injectable()
 export class DamageAgentLLMService {
   private openai: OpenAI;
   private dataset: DatasetRow[] = [];
-
+ 
   constructor(private config: ConfigService) {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     if (!apiKey) {
@@ -31,9 +31,9 @@ export class DamageAgentLLMService {
     this.openai = new OpenAI({ apiKey });
     this.loadDataset();
   }
-
+ 
   private loadDataset() {
-    const datasetPath = join(__dirname, 'data', 'car_damage_dataset.csv');
+    const datasetPath = join(process.cwd(), 'src', 'damage-agent', 'data', 'car_damage_dataset.csv');
     const raw = readFileSync(datasetPath, 'utf8');
     const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
     const rows = lines.slice(1).map((line) => {
@@ -49,7 +49,7 @@ export class DamageAgentLLMService {
     });
     this.dataset = rows.filter((row) => row.damage_class && row.severity && !Number.isNaN(row.price_tnd));
   }
-
+ 
   private normalizeSeverity(label: string, severityValue: number): 'light' | 'moderate' | 'severe' {
     const normalized = label?.trim().toLowerCase();
     if (normalized.includes('severe') || normalized.includes('sévère') || severityValue >= 50) {
@@ -60,7 +60,7 @@ export class DamageAgentLLMService {
     }
     return 'light';
   }
-
+ 
   private findDatasetMatches(
     vehicle: VehicleDetails | undefined,
     damageClass: string,
@@ -83,25 +83,25 @@ export class DamageAgentLLMService {
       }
       return severityMatch;
     });
-
+ 
     if (candidates.length > 0) {
       return candidates;
     }
-
+ 
     const fallback = this.dataset.filter(
       (row) =>
         row.damage_class.trim().toLowerCase() === normalizedClass && row.severity === severity,
     );
-
+ 
     if (fallback.length > 0) {
       return fallback;
     }
-
+ 
     return this.dataset
       .filter((row) => row.damage_class.trim().toLowerCase() === normalizedClass)
       .slice(0, 5);
   }
-
+ 
   private buildDatasetSummary(
     analysis: DamageAnalysisOutput,
     vehicle?: VehicleDetails,
@@ -113,7 +113,7 @@ export class DamageAgentLLMService {
         if (matches.length === 0) {
           return `- ${index + 1}. ${damage.class} (${damage.label}) : aucune ligne trouvée dans le dataset pour ${vehicle?.brand ?? 'vehicle'} ${vehicle?.model ?? ''} ${vehicle?.year ?? ''} / severity=${normalizedSeverity}.`;
         }
-
+ 
         const rowsText = matches
           .slice(0, 3)
           .map(
@@ -121,18 +121,18 @@ export class DamageAgentLLMService {
               `    • ${match.brand} ${match.model} ${match.year} - ${match.damage_class} - ${match.severity} -> ${match.price_tnd} TND`,
           )
           .join('\n');
-
+ 
         return `- ${index + 1}. ${damage.class} (${damage.label}, gravité=${normalizedSeverity}) :
 ${rowsText}`;
       })
       .join('\n');
   }
-
+ 
   private buildVehicleText(vehicle?: VehicleDetails): string {
     if (!vehicle) {
       return '';
     }
-
+ 
     const details = [
       vehicle.brand ? `Marque: ${vehicle.brand}` : null,
       vehicle.model ? `Modèle: ${vehicle.model}` : null,
@@ -144,20 +144,20 @@ ${rowsText}`;
     ]
       .filter(Boolean)
       .join('\n');
-
+ 
     return details ? `Détails du véhicule couvert par le contrat :\n${details}\n\n` : '';
   }
-
+ 
   private buildPrompt(
     analysis: DamageAnalysisOutput,
     vehicle?: VehicleDetails,
   ): string {
     const vehicleText = this.buildVehicleText(vehicle);
     const datasetSummary = this.buildDatasetSummary(analysis, vehicle);
-
+ 
     return `Tu es un expert en carrosserie automobile en Tunisie.
 Tu dois aider à décider si les dommages détectés nécessitent une réparation et estimer le coût total.
-
+ 
 ${vehicleText}Données des dommages détectés :
 ${analysis.results
       .map((damage, index) =>
@@ -166,10 +166,10 @@ ${analysis.results
         )}`,
       )
       .join('\n')}
-
+ 
 Références du dataset CSV pour la voiture et la gravité :
 ${datasetSummary}
-
+ 
 Instructions :
 - Utilise prioritairement les correspondances exactes dans le dataset pour le même véhicule, modèle, année et type de dommage.
 - Si aucune correspondance exacte n'est trouvée, utilise les dommages similaires du dataset et fais une estimation prudente.
@@ -178,10 +178,10 @@ Instructions :
 - Le JSON doit contenir : decision, estimatedTotalCostTnd, confidence, reason, damages.
 - decision doit être une des valeurs : repair, no_repair, manual_review.
 - damages doit être un tableau avec pour chaque dommage : class, severity, estimatedPriceTnd, recommendation.
-
+ 
 Réponds uniquement avec le JSON demandé.`;
   }
-
+ 
   async decideDamage(
     analysis: DamageAnalysisOutput,
     vehicle?: VehicleDetails,
@@ -191,15 +191,15 @@ Réponds uniquement avec le JSON demandé.`;
       model: 'gpt-4.1-mini',
       messages: [{ role: 'user', content: prompt }],
     });
-
+ 
     const content = response?.choices?.[0]?.message?.content;
     if (!content || typeof content !== 'string') {
       throw new Error('Réponse AI invalide : contenu manquant');
     }
-
+ 
     let text = content.trim();
     text = text.replace(/^```json\s*/, '').replace(/^```/, '').replace(/```$/, '');
-
+ 
     try {
       const parsed = JSON.parse(text);
       return parsed as DamageAgentDecision;
@@ -208,3 +208,4 @@ Réponds uniquement avec le JSON demandé.`;
     }
   }
 }
+ 

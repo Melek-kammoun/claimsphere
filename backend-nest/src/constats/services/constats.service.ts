@@ -57,10 +57,12 @@ export class ConstatsService {
       qrExpiresAt.setMinutes(qrExpiresAt.getMinutes() + this.QR_CODE_EXPIRY_MINUTES);
 
       const reference = `CST-${Date.now()}`;
+
+      // FIX: fallback sur new Date() si date non fournie par le frontend
       const accidentDateTime = this.toAccidentTimestamp(
         createConstatDto.accident_details?.date,
         createConstatDto.accident_details?.time
-      );
+      ) ?? new Date();
 
       // 3. Créer le constat
       const constat = this.constatRepository.create() as Constat;
@@ -68,8 +70,8 @@ export class ConstatsService {
       constat.claim_id = null;
       constat.statut = ConstatStatus.PENDING;
       constat.date_accident = accidentDateTime;
-      constat.lieu_accident = createConstatDto.accident_details?.location;
-      constat.description_accident = createConstatDto.accident_details?.description;
+      constat.lieu_accident = createConstatDto.accident_details?.location ?? null;
+      constat.description_accident = createConstatDto.accident_details?.description ?? null;
       constat.qr_token = qrToken;
       constat.qr_expires_at = qrExpiresAt;
       constat.metadata = {
@@ -82,7 +84,8 @@ export class ConstatsService {
           user_id: userId,
           timestamp: new Date(),
           details: {
-            location: createConstatDto.accident_details.location,
+            // FIX: optional chaining pour éviter crash si accident_details undefined
+            location: createConstatDto.accident_details?.location ?? null,
           },
         },
       ];
@@ -240,12 +243,13 @@ export class ConstatsService {
       constat.completed_at = new Date();
 
       // 7. Logger l'action
+      // FIX: optional chaining pour éviter crash si vehicle_b_data undefined
       constat.action_logs.push({
         action: 'constat_completed',
         user_id: userBId,
         timestamp: new Date(),
         details: {
-          vehicle_plate: completeConstatDto.vehicle_b_data.plate,
+          vehicle_plate: completeConstatDto.vehicle_b_data?.plate ?? null,
         },
       });
 
