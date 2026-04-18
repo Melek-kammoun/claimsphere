@@ -37,7 +37,7 @@ export class DamageAgentService {
     threshold?: number;
     contractId: string | number;
   }): Promise<DamageAgentDecision> {
-    const contract = await this.contratsService.getContratByIdentifier(input.contractId);
+    const contract = await this.contratsService.getContratById(input.contractId);
     const analysis = await this.damageAnalysisService.predict({
       fileName: input.fileName,
       mimeType: input.mimeType,

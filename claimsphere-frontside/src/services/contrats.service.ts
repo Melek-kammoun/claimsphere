@@ -15,8 +15,7 @@ export type Contrat = {
   modele?: string | null;
   age?: number | null;
   kilometrage?: number | null;
-  serie?: number | null;
-  num_voiture?: number | null;
+  serie?: string | null;   // FIX: was number — serie is alphanumeric e.g. "1234TUN"
   prime?: number | null;
   valeur_estimee?: number | null;
 };
@@ -34,8 +33,7 @@ export type CreateContratPayload = {
   modele?: string;
   age?: number;
   kilometrage?: number;
-  serie?: number;
-  num_voiture?: number;
+  serie?: string;    // FIX: was number — must match the string sent from the form
   prime?: number;
   valeur_estimee?: number;
 };

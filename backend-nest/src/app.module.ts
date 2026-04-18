@@ -1,29 +1,27 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from './users/entities/user.entity';
-import { Constat } from './constats/entities/constat.entity';
-import { ConstatParty } from './constats/entities/constat-party.entity';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { SupabaseModule } from './supabase/supabase.module';
-import { ClaimsModule } from './claims/claims.module';
-import { EstimateModule } from './estimate/estimate.module';
-import { ContratsModule } from './contrats/contrats.module';
-import { DamageAnalysisModule } from './damage-analysis/damage-analysis.module';
-import { DamageAgentModule } from './damage-agent/damage-agent.module';
+import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
-import { AgentsModule } from './agents/agents.module';
-import { AiScoresModule } from './ai_scores/ai_scores.module';
-import { ContractsModule } from './contracts/contracts.module';
+import { ClaimsModule } from './claims/claims.module';
+import { ContratsModule } from './contrats/contrats.module';
 import { ConstatsModule } from './constats/constats.module';
 import { DocumentsModule } from './documents/documents.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { OcrModule } from './ocr/ocr.module';
+import { EstimateModule } from './estimate/estimate.module';
+import { DamageAnalysisModule } from './damage-analysis/damage-analysis.module';
+import { DamageAgentModule } from './damage-agent/damage-agent.module';
+import { AgentsModule } from './agents/agents.module';
+import { AiScoresModule } from './ai-scores/ai-scores.module';
+import { OrchestratorModule } from './orchestrator/orchestrator.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: ['backend-nest/.env', '.env'],
-    }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -31,27 +29,31 @@ import { NotificationsModule } from './notifications/notifications.module';
         type: 'postgres' as const,
         host: config.get<string>('DB_HOST'),
         port: config.get<number>('DB_PORT'),
-        username: config.get<string>('DB_USER'),
+        username: config.get<string>('DB_USER') ?? config.get<string>('DB_USERNAME'),
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
-        entities: [User, Constat, ConstatParty],
+        entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: false,
         ssl: { rejectUnauthorized: false },
       }),
     }),
     SupabaseModule,
-    ClaimsModule,
-    EstimateModule,
-    ContratsModule,
-    DamageAnalysisModule,
-    DamageAgentModule,
+    AuthModule,
     UsersModule,
-    AgentsModule,
-    AiScoresModule,
-    ContractsModule,
+    ClaimsModule,
+    ContratsModule,
     ConstatsModule,
     DocumentsModule,
     NotificationsModule,
+    OcrModule,
+    EstimateModule,
+    DamageAnalysisModule,
+    DamageAgentModule,
+    AgentsModule,
+    AiScoresModule,
+    OrchestratorModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

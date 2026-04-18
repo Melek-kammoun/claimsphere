@@ -28,12 +28,12 @@ export class ContratsService {
       throw new BadRequestException('client_id est requis');
     }
 
-    if (!createContratDto.type) {
-      throw new BadRequestException('type est requis');
-    }
+    const type = createContratDto.type?.trim() || 'Serenite';
 
+    // FIX: serie is now stored as-is (string). No numeric coercion.
     const payload = {
       ...createContratDto,
+      type,
       status: createContratDto.status ?? 'non_traite',
       contract_number:
         createContratDto.contract_number?.trim() || this.buildContractNumber(),
@@ -79,7 +79,7 @@ export class ContratsService {
     return this.getAllContrats('non_traite');
   }
 
-  async getContratById(id: number) {
+  async getContratById(id: string | number) {
     const { data, error } = await this.supabase
       .getClient()
       .from('contracts')
@@ -98,52 +98,6 @@ export class ContratsService {
     return data;
   }
 
-  async getContratByIdentifier(identifier: string | number) {
-    if (typeof identifier === 'number' || /^[0-9]+$/.test(String(identifier))) {
-      try {
-        return await this.getContratById(Number(identifier));
-      } catch (err) {
-        if (!(err instanceof NotFoundException)) {
-          throw err;
-        }
-      }
-    }
-
-    const textColumns = [
-      'contract_number',
-      'contract_reference',
-      'contract_code',
-      'reference',
-      'code',
-      'marque',
-      'modele',
-    ];
-
-    const normalizedIdentifier = String(identifier).trim();
-    for (const column of textColumns) {
-      try {
-        const { data, error } = await this.supabase
-          .getClient()
-          .from('contracts')
-          .select('*')
-          .ilike(column, normalizedIdentifier)
-          .maybeSingle();
-
-        if (error) {
-          continue;
-        }
-
-        if (data) {
-          return data;
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    throw new NotFoundException(`Contrat ${identifier} introuvable`);
-  }
-
   async getContratsByClientId(clientId: string) {
     const { data, error } = await this.supabase
       .getClient()
@@ -159,9 +113,15 @@ export class ContratsService {
     return data;
   }
 
-  async updateContratStatus(id: number, status: string) {
+  async updateContratStatus(id: string | number, status: string) {
     if (!status) {
       throw new BadRequestException('status est requis');
+    }
+
+    // FIX: validate allowed status values to prevent garbage data
+    const allowed = ['non_traite', 'approuve', 'refuse'];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(`status invalide. Valeurs autorisees: ${allowed.join(', ')}`);
     }
 
     const { data, error } = await this.supabase

@@ -13,6 +13,6 @@ import { SupabaseModule } from '../supabase/supabase.module';
   imports: [TypeOrmModule.forFeature([Constat, ConstatParty]), SupabaseModule],
   controllers: [ConstatsController],
   providers: [ConstatsService, QrCodeService, PdfService, EmailService],
-  exports: [ConstatsService],
+  exports: [ConstatsService, QrCodeService],
 })
 export class ConstatsModule {}

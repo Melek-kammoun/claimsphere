@@ -7,7 +7,7 @@ export type VehicleEstimatePayload = {
   age: number;
   kilometrage: number;
   montantDeclare?: number;
-  offer: string;
+  offer: string;  // FIX: was optional (?), but backend always needs it to pick the right premium factor
 };
 
 export type VehicleEstimateResponse = {

@@ -1,15 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
-  AlertTriangle, Users, Shield, Filter, Search,
+  AlertTriangle, Users, Shield,
   CheckCircle, Clock, Eye, ThumbsUp, ThumbsDown,
-  UserCheck, Bot
+  UserCheck, Bot, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/api-client";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -17,11 +18,28 @@ const fadeUp = {
 };
 
 type ContractApiResponse = {
-  id: number;
+  id: string | number;
   status: string;
   type: string;
   montant_declare: number;
   client_id: string;
+};
+
+type Contract = {
+  id: string | number;
+  status: string;
+  type: string;
+  montant_declare: number;
+  client_id: string;
+};
+
+type Claim = {
+  id: number;
+  status: string;
+  description: string;
+  contractType: string;
+  montantDeclare: string;
+  fraudRisk: number;
 };
 
 const statusColors: Record<string, string> = {
@@ -30,127 +48,97 @@ const statusColors: Record<string, string> = {
   refuse: "bg-destructive/10 text-destructive border-destructive/30",
 };
 
+function mapContract(item: ContractApiResponse): Contract {
+  return {
+    id: item.id,
+    status: item.status,
+    type: item.type,
+    montant_declare: item.montant_declare || 0,
+    client_id: item.client_id,
+  };
+}
+
 export default function AgentDashboard() {
+  const { toast } = useToast();
   const [activeContracts, setActiveContracts] = useState<Contract[]>([]);
   const [pendingContracts, setPendingContracts] = useState<Contract[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        // Fetch active contracts
-        const activeResponse = await fetch("http://localhost:5000/api/contrats?status=actif");
-        const activeData = await activeResponse.json();
-        setActiveContracts(
-          Array.isArray(activeData)
-            ? activeData.map((item: ContractApiResponse) => ({
-                id: item.id,
-                status: item.status,
-                type: item.type,
-                montant_declare: item.montant_declare || 0,
-                client_id: item.client_id,
-              }))
-            : []
-        );
-
-        // Fetch pending contracts
-        const pendingResponse = await fetch("http://localhost:5000/api/contrats/pending");
-        const pendingData = await pendingResponse.json();
-        setPendingContracts(
-          Array.isArray(pendingData)
-            ? pendingData.map((item: ContractApiResponse) => ({
-                id: item.id,
-                status: item.status,
-                type: item.type,
-                montant_declare: item.montant_declare || 0,
-                client_id: item.client_id,
-              }))
-            : []
-        );
-
-        // Mock data for claims (back-end not ready)
-        setClaims([
-          {
-            id: 1,
-            status: "non_traite",
-            description: "Accident de voiture - collision arrière",
-            contractType: "tous_risques",
-            montantDeclare: "5000 TND",
-            fraudRisk: 15,
-          },
-          {
-            id: 2,
-            status: "en_cours",
-            description: "Vol de véhicule",
-            contractType: "vol",
-            montantDeclare: "15000 TND",
-            fraudRisk: 30,
-          },
-          {
-            id: 3,
-            status: "traite",
-            description: "Bris de glace - pare-brise",
-            contractType: "bris_de_glace",
-            montantDeclare: "800 TND",
-            fraudRisk: 5,
-          },
-          {
-            id: 4,
-            status: "non_traite",
-            description: "Incendie partiel",
-            contractType: "incendie",
-            montantDeclare: "12000 TND",
-            fraudRisk: 45,
-          },
-        ]);
-      } catch (err) {
-        console.error("Erreur de chargement:", err);
-        setActiveContracts([]);
-        setPendingContracts([]);
-        setClaims([]);
-      }
+  // FIX: useCallback so fetchData is stable and can be called after mutations
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // FIX: use consistent query-param pattern for both endpoints
+      const [activeData, pendingData] = await Promise.all([
+        apiRequest<ContractApiResponse[]>('/api/contrats?status=approuve'),
+        apiRequest<ContractApiResponse[]>('/api/contrats?status=non_traite'),
+      ]);
+      setActiveContracts(Array.isArray(activeData) ? activeData.map(mapContract) : []);
+      setPendingContracts(Array.isArray(pendingData) ? pendingData.map(mapContract) : []);
+    } catch (err) {
+      console.error('Erreur de chargement:', err);
+      setActiveContracts([]);
+      setPendingContracts([]);
+    } finally {
       setLoading(false);
-    };
-    fetchData();
+    }
   }, []);
 
-  // ✅ Approuver un contrat
-  const handleApprove = async (id: number) => {
+  useEffect(() => {
+    void fetchData();
+
+    // Mock data for claims (back-end not ready)
+    setClaims([
+      { id: 1, status: "non_traite", description: "Accident de voiture - collision arrière", contractType: "tous_risques", montantDeclare: "5000 TND", fraudRisk: 15 },
+      { id: 2, status: "en_cours", description: "Vol de véhicule", contractType: "vol", montantDeclare: "15000 TND", fraudRisk: 30 },
+      { id: 3, status: "traite", description: "Bris de glace - pare-brise", contractType: "bris_de_glace", montantDeclare: "800 TND", fraudRisk: 5 },
+      { id: 4, status: "non_traite", description: "Incendie partiel", contractType: "incendie", montantDeclare: "12000 TND", fraudRisk: 45 },
+    ]);
+  }, [fetchData]);
+
+  const handleApprove = async (id: string | number) => {
+    const key = String(id);
+    setApprovingId(key);
     try {
-      await fetch(`http://localhost:5000/api/contrats/${id}/status`, {
+      await apiRequest(`/api/contrats/${key}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'approuve' })
+        body: { status: 'approuve' },
       });
-      setPendingContracts(prev => prev.filter(c => c.id !== id));
+      toast({ title: "Contrat approuvé", description: `Le contrat #${key} a été approuvé.` });
+      // FIX: single source of truth — just re-fetch instead of optimistic + re-fetch
+      await fetchData();
     } catch (err) {
-      console.error("Erreur approbation:", err);
+      toast({ title: "Erreur", description: (err as Error).message ?? "Impossible d'approuver.", variant: "destructive" });
+    } finally {
+      setApprovingId(null);
     }
   };
 
-  // ✅ Refuser un contrat
-  const handleReject = async (id: number) => {
+  const handleReject = async (id: string | number) => {
+    const key = String(id);
+    setRejectingId(key);
     try {
-      await fetch(`http://localhost:5000/api/contrats/${id}/status`, {
+      await apiRequest(`/api/contrats/${key}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'refuse' })
+        body: { status: 'refuse' },
       });
-      setPendingContracts(prev => prev.filter(c => c.id !== id));
+      toast({ title: "Contrat refusé", description: `Le contrat #${key} a été refusé.` });
+      // FIX: re-fetch to reflect refused contracts (they disappear from pending)
+      await fetchData();
     } catch (err) {
-      console.error("Erreur refus:", err);
+      toast({ title: "Erreur", description: (err as Error).message ?? "Impossible de refuser.", variant: "destructive" });
+    } finally {
+      setRejectingId(null);
     }
   };
 
   const renderContractsList = (contractsList: Contract[], type: string) => {
-    if (loading) {
-      return <div>Chargement...</div>;
-    }
-    if (contractsList.length === 0) {
-      return <div>Aucun contrat trouvé.</div>;
-    }
+    if (loading) return <div>Chargement...</div>;
+    if (contractsList.length === 0) return <div>Aucun contrat trouvé.</div>;
+
     return (
       <div className="space-y-4">
         {contractsList.map((c, i) => (
@@ -173,21 +161,28 @@ export default function AgentDashboard() {
                 <p className="text-sm font-medium text-foreground">Montant déclaré: {c.montant_declare} TND</p>
                 <p className="text-sm text-muted-foreground">Client ID: {c.client_id}</p>
               </div>
+
               {type === "en_attente" && (
                 <div className="flex flex-row lg:flex-col gap-2 self-start">
                   <Button
                     size="sm"
                     className="bg-success text-success-foreground hover:bg-success/90"
-                    onClick={() => handleApprove(c.id)}
+                    disabled={approvingId === String(c.id) || rejectingId === String(c.id)}
+                    onClick={() => void handleApprove(c.id)}
                   >
-                    <ThumbsUp className="w-4 h-4 mr-1" /> Approuver
+                    {approvingId === String(c.id)
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <><ThumbsUp className="w-4 h-4 mr-1" /> Approuver</>}
                   </Button>
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => handleReject(c.id)}
+                    disabled={approvingId === String(c.id) || rejectingId === String(c.id)}
+                    onClick={() => void handleReject(c.id)}
                   >
-                    <ThumbsDown className="w-4 h-4 mr-1" /> Refuser
+                    {rejectingId === String(c.id)
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <><ThumbsDown className="w-4 h-4 mr-1" /> Refuser</>}
                   </Button>
                   <Button size="sm" variant="ghost" disabled>
                     <Eye className="w-4 h-4 mr-1" /> Détails
@@ -202,9 +197,8 @@ export default function AgentDashboard() {
   };
 
   const renderClaimsList = (claimsList: Claim[]) => {
-    if (claimsList.length === 0) {
-      return <div>Aucun sinistre trouvé.</div>;
-    }
+    if (claimsList.length === 0) return <div>Aucun sinistre trouvé.</div>;
+
     return (
       <div className="space-y-4">
         {claimsList.map((c, i) => (
@@ -226,8 +220,6 @@ export default function AgentDashboard() {
                 </p>
                 <p className="text-sm font-medium text-foreground">Montant déclaré: {c.montantDeclare}</p>
                 <p className="text-sm text-muted-foreground">Description: {c.description}</p>
-
-                {/* AI indicator */}
                 <div className="mt-3 p-3 rounded-lg bg-muted/50 border">
                   <div className="flex items-center gap-2 mb-2">
                     <Bot className="w-4 h-4 text-primary" />
@@ -242,7 +234,6 @@ export default function AgentDashboard() {
                   </div>
                 </div>
               </div>
-
               <div className="flex flex-row lg:flex-col gap-2 self-start">
                 <Button size="sm" variant="ghost" disabled>
                   <Eye className="w-4 h-4 mr-1" /> Détails
@@ -257,7 +248,6 @@ export default function AgentDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="bg-card border-b sticky top-0 z-30">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
           <div className="flex items-center gap-3">
@@ -279,7 +269,6 @@ export default function AgentDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: "Contrats Actifs", value: activeContracts.length, icon: CheckCircle, color: "text-success" },
@@ -302,13 +291,10 @@ export default function AgentDashboard() {
           </TabsList>
 
           <TabsContent value="contrats" className="space-y-6">
-            {/* Contrats Actifs */}
             <div>
               <h2 className="text-xl font-bold mb-4">Contrats Actifs</h2>
               {renderContractsList(activeContracts, "actifs")}
             </div>
-
-            {/* Contrats en Attente */}
             <div>
               <h2 className="text-xl font-bold mb-4">Contrats en Attente</h2>
               {renderContractsList(pendingContracts, "en_attente")}
@@ -316,19 +302,14 @@ export default function AgentDashboard() {
           </TabsContent>
 
           <TabsContent value="sinistres" className="space-y-6">
-            {/* Sinistres en Attente */}
             <div>
               <h2 className="text-xl font-bold mb-4">Sinistres en Attente</h2>
               {renderClaimsList(claims.filter(c => c.status === "non_traite"))}
             </div>
-
-            {/* Sinistres en Cours */}
             <div>
               <h2 className="text-xl font-bold mb-4">Sinistres en Cours</h2>
               {renderClaimsList(claims.filter(c => c.status === "en_cours"))}
             </div>
-
-            {/* Sinistres Traités */}
             <div>
               <h2 className="text-xl font-bold mb-4">Sinistres Traités</h2>
               {renderClaimsList(claims.filter(c => c.status === "traite"))}

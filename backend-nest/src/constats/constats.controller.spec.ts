@@ -102,7 +102,7 @@ describe('ConstatsController', () => {
       );
 
       expect(result).toBeDefined();
-      expect(result.status).toBe('complet');
+      expect(result.statut).toBe('complet');
     });
   });
 });

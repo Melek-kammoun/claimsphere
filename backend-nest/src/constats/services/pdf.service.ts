@@ -7,6 +7,8 @@ import { QrCodeService } from './qrcode.service';
 @Injectable()
 export class PdfService {
   private readonly logger = new Logger(PdfService.name);
+  private readonly sectionBlue = rgb(0, 0, 0.39);
+  private readonly sectionRed = rgb(0.39, 0, 0);
 
   constructor(private qrCodeService: QrCodeService) {}
 
@@ -63,7 +65,7 @@ export class PdfService {
         y: yPosition,
         size: 12,
         font: boldFont,
-        color: rgb(0, 0, 100),
+        color: this.sectionBlue,
       });
       yPosition -= lineHeight * 1.5;
 
@@ -84,7 +86,7 @@ export class PdfService {
           y: yPosition,
           size: 12,
           font: boldFont,
-          color: rgb(100, 0, 0),
+          color: this.sectionRed,
         });
         yPosition -= lineHeight * 1.5;
 

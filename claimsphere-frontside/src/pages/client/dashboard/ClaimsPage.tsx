@@ -1,412 +1,815 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, Plus, Upload, Camera, FileText, MapPin,
-  CheckCircle, Clock, XCircle, ChevronRight, QrCode, Eye,
+  AlertTriangle,
+  Camera,
+  CheckCircle,
+  Clock,
+  Eye,
+  FileText,
+  Loader2,
+  MapPin,
+  Plus,
+  QrCode,
+  ShieldCheck,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ApiError, API_BASE_URL, apiRequest } from "@/lib/api-client";
+import { API_BASE_URL, ApiError, apiRequest } from "@/lib/api-client";
 
-const claims = [
-  { id: "SN-2026-034", date: "12/02/2026", type: "Accident", status: "En traitement", vehicle: "Dacia Logan 2023", amount: "15 000 DH", aiSuggestion: "Remboursement partiel recommandé" },
-  { id: "SN-2025-189", date: "28/11/2025", type: "Bris de glace", status: "Remboursé", vehicle: "Renault Clio 2021", amount: "2 500 DH", aiSuggestion: null },
-  { id: "SN-2025-102", date: "05/08/2025", type: "Vol", status: "Refusé", vehicle: "Dacia Logan 2023", amount: "45 000 DH", aiSuggestion: "Anomalie détectée par l'IA" },
-];
+type ClaimStatus = "pending" | "in_review" | "documents_requested" | "approved" | "rejected";
 
-const statusConfig: Record<string, { color: string; icon: typeof CheckCircle }> = {
-  "En traitement": { color: "bg-warning/10 text-warning border-warning/30", icon: Clock },
-  "Remboursé": { color: "bg-success/10 text-success border-success/30", icon: CheckCircle },
-  "Refusé": { color: "bg-destructive/10 text-destructive border-destructive/30", icon: XCircle },
-};
-
-interface ConstatFormData {
-  fullName: string;
-  phone: string;
-  email: string;
-  plate: string;
-  brand: string;
-  model: string;
-  year: string;
-  insuranceCompany: string;
-  policyNumber: string;
-  accidentDate: string;
-  accidentTime: string;
-  accidentLocation: string;
-  accidentDescription: string;
+interface Claim {
+  id: string;
+  reference: string;
+  date: string;
+  type: string;
+  status: ClaimStatus;
+  vehicle: string | null;
+  amount: number | null;
+  location?: string | null;
 }
 
+interface Contract {
+  id: string | number;
+  type: string;
+  status: string;
+  marque?: string;
+  modele?: string;
+  serie?: string;
+  contract_number?: string;
+}
+
+interface ClaimsResponse {
+  success: boolean;
+  data: Claim[];
+  total: number;
+}
+
+interface WorkflowStartResponse {
+  success: boolean;
+  data: {
+    qr_token: string;
+    qr_code: string;
+    scan_url: string;
+    constat: {
+      id: string;
+      qr_token: string;
+      reference: string;
+    };
+  };
+}
+
+interface WorkflowCompleteResponse {
+  success: boolean;
+  data: {
+    claim: Claim;
+    orchestration: {
+      decision_support: {
+        decision: "approve" | "reject" | "review";
+        risk_level: "low" | "medium" | "high";
+        recommended_payout: number;
+        reasoning: string;
+      };
+      consolidated_claim_data: {
+        constat: {
+          status: string | null;
+          second_party: unknown | null;
+        };
+      };
+    };
+  };
+}
+
+type WorkflowStep = "claim" | "qr" | "uploads" | "done";
+type FinalizationCheckpoint = "claim" | "documents" | "ocr" | "damage" | "merge";
+
+const statusConfig: Record<ClaimStatus, { label: string; color: string; icon: typeof CheckCircle }> = {
+  pending: { label: "En attente", color: "bg-yellow-50 text-yellow-700 border-yellow-200", icon: Clock },
+  in_review: { label: "En traitement", color: "bg-blue-50 text-blue-700 border-blue-200", icon: Clock },
+  documents_requested: { label: "Documents requis", color: "bg-orange-50 text-orange-700 border-orange-200", icon: AlertTriangle },
+  approved: { label: "Approuvé", color: "bg-green-50 text-green-700 border-green-200", icon: CheckCircle },
+  rejected: { label: "Refusé", color: "bg-red-50 text-red-700 border-red-200", icon: XCircle },
+};
+
+const getToken = (): string => {
+  const raw = localStorage.getItem("sb-raizxiwxrkgnhnlccvcx-auth-token");
+  if (!raw) return "";
+  try {
+    return (JSON.parse(raw) as { access_token?: string }).access_token ?? "";
+  } catch {
+    return "";
+  }
+};
+
 export default function ClaimsPage() {
-  const [showNewClaim, setShowNewClaim] = useState(false);
-  const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
-  const [generatedQr, setGeneratedQr] = useState<{ qrCode: string; scanUrl: string } | null>(null);
   const { toast } = useToast();
-  
-  const [formData, setFormData] = useState<ConstatFormData>({
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [step, setStep] = useState<WorkflowStep>("claim");
+  const [starting, setStarting] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [workflowStart, setWorkflowStart] = useState<WorkflowStartResponse["data"] | null>(null);
+  const [workflowComplete, setWorkflowComplete] = useState<WorkflowCompleteResponse["data"] | null>(null);
+  const [pvPoliceFile, setPvPoliceFile] = useState<File | null>(null);
+  const [accidentImages, setAccidentImages] = useState<File[]>([]);
+  const [activeCheckpoint, setActiveCheckpoint] = useState<FinalizationCheckpoint | null>(null);
+
+  const [form, setForm] = useState({
+    contract_id: "",
+    type: "accident",
+    date: "",
+    time: "",
+    location: "",
+    description: "",
+    vehicle: "",
     fullName: "",
     phone: "",
     email: "",
-    plate: "",
-    brand: "",
-    model: "",
-    year: new Date().getFullYear().toString(),
+    drivingLicense: "",
     insuranceCompany: "",
     policyNumber: "",
-    accidentDate: new Date().toISOString().slice(0, 10),
-    accidentTime: new Date().toTimeString().slice(0, 5),
-    accidentLocation: "",
-    accidentDescription: "",
+    agentName: "",
+    vehicleBrand: "",
+    vehicleModel: "",
+    vehicleYear: "",
   });
 
-  const handleFormChange = (field: keyof ConstatFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  useEffect(() => {
+    setLoading(true);
+    void Promise.all([loadClaims(), loadContracts()]).finally(() => setLoading(false));
+  }, []);
+
+  const secondPartyStatus = useMemo(() => {
+    if (!workflowComplete?.orchestration.consolidated_claim_data.constat.second_party) {
+      return "En attente du second conducteur";
+    }
+    return "Constat du second conducteur reçu";
+  }, [workflowComplete]);
+
+  const loadClaims = async () => {
+    try {
+      const response = await apiRequest<ClaimsResponse>("/api/claims");
+      setClaims(Array.isArray(response.data) ? response.data : []);
+    } catch {
+      setClaims([]);
+    }
   };
 
-  const handleSubmitClaim = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmittingClaim(true);
-
+  const loadContracts = async () => {
     try {
-      // Récupérer ou générer l'ID utilisateur
-      const storageKey = "claimsphere_demo_user_id";
-      let userId = localStorage.getItem(storageKey);
-      if (!userId) {
-        userId = crypto.randomUUID();
-        localStorage.setItem(storageKey, userId);
-      }
+      const response = await apiRequest<Contract[]>("/api/contrats/client/me");
+      setContracts(Array.isArray(response) ? response : []);
+    } catch {
+      setContracts([]);
+    }
+  };
 
-      // Soumettre le constat avec les vraies données du formulaire
-      const response = await apiRequest<{ constat: { qr_token: string }; qr_code: string; scan_url?: string }>("/constats", {
-        method: "POST",
-        headers: {
-          "x-user-id": userId,
-        },
-        body: {
+  const resetWorkflow = () => {
+    setShowModal(false);
+    setStep("claim");
+    setStarting(false);
+    setFinishing(false);
+    setWorkflowStart(null);
+    setWorkflowComplete(null);
+    setPvPoliceFile(null);
+    setAccidentImages([]);
+    setActiveCheckpoint(null);
+    setForm({
+      contract_id: "",
+      type: "accident",
+      date: "",
+      time: "",
+      location: "",
+      description: "",
+      vehicle: "",
+      fullName: "",
+      phone: "",
+      email: "",
+      drivingLicense: "",
+      insuranceCompany: "",
+      policyNumber: "",
+      agentName: "",
+      vehicleBrand: "",
+      vehicleModel: "",
+      vehicleYear: "",
+    });
+  };
+
+  const handleContractChange = (contractId: string) => {
+    const selected = contracts.find((contract) => String(contract.id) === contractId);
+    setForm((prev) => ({
+      ...prev,
+      contract_id: contractId,
+      vehicle: selected ? [selected.marque, selected.modele, selected.serie].filter(Boolean).join(" ") : prev.vehicle,
+      vehicleBrand: selected?.marque ?? prev.vehicleBrand,
+      vehicleModel: selected?.modele ?? prev.vehicleModel,
+    }));
+  };
+
+  const validateStartStep = () => {
+    if (!form.date || !form.location || !form.description || !form.vehicle) {
+      toast({
+        title: "Informations incomplètes",
+        description: "Renseignez la date, le lieu, la description et le véhicule.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (!form.fullName || !form.phone || !form.email || !form.insuranceCompany || !form.policyNumber) {
+      toast({
+        title: "Constat incomplet",
+        description: "Les informations du conducteur et de l’assurance sont obligatoires.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  const startWorkflow = async () => {
+    if (!validateStartStep()) return;
+
+    setStarting(true);
+    try {
+      const payload = {
+        contract_id: form.contract_id || null,
+        type: form.type,
+        date: form.date,
+        location: form.location,
+        description: form.description,
+        vehicle: form.vehicle,
+        constat: {
           user_a_data: {
-            full_name: formData.fullName,
-            phone: formData.phone,
-            email: formData.email,
+            full_name: form.fullName,
+            phone: form.phone,
+            email: form.email,
+            driving_license: form.drivingLicense || undefined,
           },
           vehicle_a_data: {
-            plate: formData.plate,
-            brand: formData.brand,
-            model: formData.model,
-            year: parseInt(formData.year) || new Date().getFullYear(),
+            plate: form.vehicle,
+            brand: form.vehicleBrand,
+            model: form.vehicleModel,
+            year: form.vehicleYear ? Number(form.vehicleYear) : undefined,
           },
           insurance_a_data: {
-            company: formData.insuranceCompany,
-            policy_number: formData.policyNumber,
+            company: form.insuranceCompany,
+            policy_number: form.policyNumber,
+            agent_name: form.agentName || undefined,
           },
           accident_details: {
-            date: formData.accidentDate,
-            time: formData.accidentTime,
-            location: formData.accidentLocation,
-            description: formData.accidentDescription,
+            date: form.date,
+            time: form.time || "00:00",
+            location: form.location,
+            description: form.description,
           },
+          signature_a: form.fullName,
           photos_a: [],
-          signature_a: "",
+        },
+      };
+
+      const response = await apiRequest<WorkflowStartResponse>("/api/claims/workflow/start", {
+        method: "POST",
+        body: payload,
+      });
+
+      setWorkflowStart(response.data);
+      setStep("qr");
+      toast({
+        title: "Constat initialisé",
+        description: "Le QR code a été généré. Vous pouvez maintenant partager le lien puis ajouter les pièces.",
+      });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Impossible de démarrer la déclaration.";
+      toast({ title: "Erreur", description: message, variant: "destructive" });
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const finishWorkflow = async () => {
+    if (!workflowStart?.qr_token) {
+      toast({
+        title: "QR manquant",
+        description: "Le workflow doit être initialisé avant la finalisation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!pvPoliceFile) {
+      toast({
+        title: "PV requis",
+        description: "Ajoutez le procès-verbal de police pour finaliser le dossier.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (accidentImages.length === 0) {
+      toast({
+        title: "Images requises",
+        description: "Ajoutez au moins une image de l’accident.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setFinishing(true);
+    setActiveCheckpoint("claim");
+    try {
+      const formData = new FormData();
+      formData.append(
+        "payload",
+        JSON.stringify({
+          qr_token: workflowStart.qr_token,
+          contract_id: form.contract_id || null,
+          type: form.type,
+          date: form.date,
+          location: form.location,
+          description: form.description,
+          vehicle: form.vehicle,
+        }),
+      );
+      formData.append("pv_police", pvPoliceFile);
+      accidentImages.forEach((file) => formData.append("accident_images", file));
+      setActiveCheckpoint("documents");
+
+      const response = await fetch(`${API_BASE_URL}/api/claims/workflow/complete`, {
+        method: "POST",
+        body: formData,
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
         },
       });
 
-      // Utiliser uniquement l'URL publique renvoyée par le backend
-      const scanUrl = response.scan_url;
-
-      if (!scanUrl) {
-        throw new Error("URL de scan manquante dans la réponse du backend.");
+      const payload = (await response.json()) as WorkflowCompleteResponse | { message?: string };
+      if (!response.ok) {
+        const message = typeof payload.message === "string" ? payload.message : "Impossible de finaliser le dossier.";
+        throw new Error(message);
       }
-      
-      setGeneratedQr({ qrCode: response.qr_code, scanUrl });
-      setShowNewClaim(false);
 
+      setActiveCheckpoint("ocr");
+      setActiveCheckpoint("damage");
+      setActiveCheckpoint("merge");
+      setWorkflowComplete((payload as WorkflowCompleteResponse).data);
+      setStep("done");
+      await loadClaims();
       toast({
-        title: "Constat créé avec succès",
-        description: "Un QR code a été généré. Partagez-le avec l'autre conducteur.",
+        title: "Sinistre enregistré",
+        description: "Le dossier a été consolidé et les analyses IA sont prêtes pour décision.",
       });
     } catch (error) {
-      let description = "Impossible de créer le constat.";
-
-      if (error instanceof ApiError && error.details && typeof error.details === "object") {
-        const maybeMessage = (error.details as { message?: string }).message;
-        if (maybeMessage) {
-          description = maybeMessage;
-        }
-      }
-
       toast({
         title: "Erreur",
-        description,
+        description: error instanceof Error ? error.message : "Erreur de finalisation.",
         variant: "destructive",
       });
     } finally {
-      setIsSubmittingClaim(false);
+      setFinishing(false);
+      setActiveCheckpoint(null);
     }
+  };
+
+  const checkpoints: Array<{ key: FinalizationCheckpoint; label: string; description: string }> = [
+    { key: "claim", label: "CrÃ©ation du dossier", description: "Le sinistre est crÃ©Ã© et liÃ© au constat." },
+    { key: "documents", label: "Enregistrement des piÃ¨ces", description: "PV police et images sont rattachÃ©s au dossier." },
+    { key: "ocr", label: "Analyse OCR", description: "Le PV police est lu et structurÃ©." },
+    { key: "damage", label: "Analyse des dommages", description: "Les images d'accident sont analysÃ©es." },
+    { key: "merge", label: "Consolidation", description: "Les donnÃ©es sont fusionnÃ©es pour la dÃ©cision." },
+  ];
+
+  const getCheckpointState = (checkpoint: FinalizationCheckpoint) => {
+    if (!activeCheckpoint) return "idle";
+    const currentIndex = checkpoints.findIndex((item) => item.key === activeCheckpoint);
+    const checkpointIndex = checkpoints.findIndex((item) => item.key === checkpoint);
+    if (checkpointIndex < currentIndex) return "done";
+    if (checkpointIndex === currentIndex) return "active";
+    return "pending";
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-display text-2xl font-bold text-foreground">Gestion des sinistres</h2>
-          <p className="text-muted-foreground text-sm">Déclarez et suivez vos sinistres en temps réel.</p>
+          <p className="text-sm text-muted-foreground">
+            Vos sinistres personnels, sans suggestions IA affichées côté client.
+          </p>
         </div>
-        <Dialog open={showNewClaim} onOpenChange={setShowNewClaim}>
+
+        <Dialog open={showModal} onOpenChange={(open) => (open ? setShowModal(true) : resetWorkflow())}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-primary text-primary-foreground hover:opacity-90">
-              <Plus className="w-4 h-4 mr-2" /> Déclarer un sinistre
+              <Plus className="mr-2 h-4 w-4" />
+              Déclarer sinistre
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+
+          <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="font-display">Déclaration de sinistre (Conducteur 1)</DialogTitle>
-              <p className="text-sm text-muted-foreground mt-2">Remplissez vos informations. Un QR code sera généré après soumission.</p>
+              <DialogTitle className="font-display">
+                Déclaration de sinistre
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {step === "claim" && "Étape 1 / 3 - Déclaration + constat"}
+                  {step === "qr" && "Étape 2 / 3 - QR du second conducteur"}
+                  {step === "uploads" && "Étape 3 / 3 - PV et images"}
+                  {step === "done" && "Workflow finalisé"}
+                </span>
+              </DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmitClaim} className="space-y-4 mt-4">
-              {/* Informations personnelles */}
-              <div className="border-b pb-4">
-                <h4 className="font-semibold text-sm mb-3">Vos informations</h4>
-                <div>
-                  <Label>Nom complet</Label>
-                  <Input 
-                    placeholder="Jean Dupont" 
-                    value={formData.fullName}
-                    onChange={(e) => handleFormChange("fullName", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="mt-2">
-                  <Label>Téléphone</Label>
-                  <Input 
-                    placeholder="+212 6 XX XX XX XX" 
-                    value={formData.phone}
-                    onChange={(e) => handleFormChange("phone", e.target.value)}
-                  />
-                </div>
-                <div className="mt-2">
-                  <Label>Email</Label>
-                  <Input 
-                    type="email"
-                    placeholder="jean@example.com" 
-                    value={formData.email}
-                    onChange={(e) => handleFormChange("email", e.target.value)}
-                  />
-                </div>
-              </div>
 
-              {/* Informations du véhicule */}
-              <div className="border-b pb-4">
-                <h4 className="font-semibold text-sm mb-3">Véhicule</h4>
-                <div>
-                  <Label>Immatriculation</Label>
-                  <Input 
-                    placeholder="AA-123-BB" 
-                    value={formData.plate}
-                    onChange={(e) => handleFormChange("plate", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <div>
-                    <Label>Marque</Label>
-                    <Input 
-                      placeholder="Dacia" 
-                      value={formData.brand}
-                      onChange={(e) => handleFormChange("brand", e.target.value)}
-                    />
+            {step === "claim" && (
+              <div className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Contrat concerné</Label>
+                    <Select value={form.contract_id} onValueChange={handleContractChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner un contrat" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contracts.length === 0 ? (
+                          <div className="p-2 text-sm text-muted-foreground">Aucun contrat disponible</div>
+                        ) : (
+                          contracts.map((contract) => (
+                            <SelectItem key={String(contract.id)} value={String(contract.id)}>
+                              {contract.contract_number ?? contract.id} - {contract.marque} {contract.modele}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div>
-                    <Label>Modèle</Label>
-                    <Input 
-                      placeholder="Logan" 
-                      value={formData.model}
-                      onChange={(e) => handleFormChange("model", e.target.value)}
-                    />
+
+                  <div className="space-y-2">
+                    <Label>Type de sinistre</Label>
+                    <Select value={form.type} onValueChange={(value) => setForm((prev) => ({ ...prev, type: value }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="accident">Accident</SelectItem>
+                        <SelectItem value="vol">Vol</SelectItem>
+                        <SelectItem value="bris">Bris de glace</SelectItem>
+                        <SelectItem value="incendie">Incendie</SelectItem>
+                        <SelectItem value="autre">Autre</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
-                <div className="mt-2">
-                  <Label>Année</Label>
-                  <Input 
-                    type="number"
-                    placeholder={new Date().getFullYear().toString()}
-                    value={formData.year}
-                    onChange={(e) => handleFormChange("year", e.target.value)}
-                  />
-                </div>
-              </div>
 
-              {/* Informations d'assurance */}
-              <div className="border-b pb-4">
-                <h4 className="font-semibold text-sm mb-3">Assurance</h4>
-                <div>
-                  <Label>Compagnie d'assurance</Label>
-                  <Input 
-                    placeholder="ClaimSphere Assurance" 
-                    value={formData.insuranceCompany}
-                    onChange={(e) => handleFormChange("insuranceCompany", e.target.value)}
-                  />
-                </div>
-                <div className="mt-2">
-                  <Label>Numéro de police</Label>
-                  <Input 
-                    placeholder="POL-2026-0001" 
-                    value={formData.policyNumber}
-                    onChange={(e) => handleFormChange("policyNumber", e.target.value)}
-                  />
-                </div>
-              </div>
+                  <div className="space-y-2">
+                    <Label>Véhicule / immatriculation</Label>
+                    <Input value={form.vehicle} onChange={(event) => setForm((prev) => ({ ...prev, vehicle: event.target.value }))} />
+                  </div>
 
-              {/* Détails de l'accident */}
-              <div className="border-b pb-4">
-                <h4 className="font-semibold text-sm mb-3">Accident</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div className="space-y-2">
                     <Label>Date</Label>
-                    <Input 
-                      type="date"
-                      value={formData.accidentDate}
-                      onChange={(e) => handleFormChange("accidentDate", e.target.value)}
-                    />
+                    <Input type="date" value={form.date} onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))} />
                   </div>
-                  <div>
+
+                  <div className="space-y-2">
                     <Label>Heure</Label>
-                    <Input 
-                      type="time"
-                      value={formData.accidentTime}
-                      onChange={(e) => handleFormChange("accidentTime", e.target.value)}
-                    />
+                    <Input type="time" value={form.time} onChange={(event) => setForm((prev) => ({ ...prev, time: event.target.value }))} />
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Lieu</Label>
+                    <div className="relative">
+                      <Input value={form.location} onChange={(event) => setForm((prev) => ({ ...prev, location: event.target.value }))} />
+                      <MapPin className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Description</Label>
+                    <Textarea rows={4} value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
                   </div>
                 </div>
-                <div className="mt-2">
-                  <Label>Lieu</Label>
-                  <div className="relative">
-                    <Input 
-                      placeholder="Casablanca" 
-                      value={formData.accidentLocation}
-                      onChange={(e) => handleFormChange("accidentLocation", e.target.value)}
-                    />
-                    <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+
+                <div className="rounded-xl border bg-muted/20 p-4">
+                  <h3 className="mb-4 font-semibold">Constat - votre partie</h3>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Nom complet</Label>
+                      <Input value={form.fullName} onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Téléphone</Label>
+                      <Input value={form.phone} onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input type="email" value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Permis</Label>
+                      <Input value={form.drivingLicense} onChange={(event) => setForm((prev) => ({ ...prev, drivingLicense: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Compagnie d’assurance</Label>
+                      <Input value={form.insuranceCompany} onChange={(event) => setForm((prev) => ({ ...prev, insuranceCompany: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Numéro de police</Label>
+                      <Input value={form.policyNumber} onChange={(event) => setForm((prev) => ({ ...prev, policyNumber: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Agent / agence</Label>
+                      <Input value={form.agentName} onChange={(event) => setForm((prev) => ({ ...prev, agentName: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Année véhicule</Label>
+                      <Input value={form.vehicleYear} onChange={(event) => setForm((prev) => ({ ...prev, vehicleYear: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Marque</Label>
+                      <Input value={form.vehicleBrand} onChange={(event) => setForm((prev) => ({ ...prev, vehicleBrand: event.target.value }))} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Modèle</Label>
+                      <Input value={form.vehicleModel} onChange={(event) => setForm((prev) => ({ ...prev, vehicleModel: event.target.value }))} />
+                    </div>
                   </div>
                 </div>
-                <div className="mt-2">
-                  <Label>Description</Label>
-                  <Textarea 
-                    placeholder="Décrivez les circonstances de l'accident..." 
-                    rows={3}
-                    value={formData.accidentDescription}
-                    onChange={(e) => handleFormChange("accidentDescription", e.target.value)}
-                  />
+
+                <div className="flex gap-3">
+                  <Button type="button" variant="outline" className="flex-1" onClick={resetWorkflow}>
+                    Annuler
+                  </Button>
+                  <Button type="button" className="flex-1 bg-gradient-primary text-primary-foreground" onClick={startWorkflow} disabled={starting}>
+                    {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Générer le QR
+                  </Button>
                 </div>
               </div>
+            )}
 
-              <div className="flex gap-3 pt-2">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setShowNewClaim(false)}>Annuler</Button>
-                <Button 
-                  type="submit" 
-                  className="flex-1 bg-gradient-primary text-primary-foreground hover:opacity-90"
-                  disabled={isSubmittingClaim}
-                >
-                  {isSubmittingClaim ? "Création en cours..." : "Créer le constat"}
+            {step === "qr" && workflowStart && (
+              <div className="space-y-5">
+                <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                  <p className="font-semibold text-green-800">Constat créé</p>
+                  <p className="text-sm text-green-700">
+                    Partagez ce lien ou ce QR code avec le second conducteur pour qu’il complète sa partie.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border p-4">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+                    <QrCode className="h-4 w-4" />
+                    QR token: {workflowStart.qr_token}
+                  </div>
+                  <div className="mb-4 flex justify-center rounded-lg border bg-white p-4">
+                    <img src={workflowStart.qr_code} alt="QR constat" className="h-48 w-48" />
+                  </div>
+                  <div className="rounded-lg bg-muted p-3 text-xs break-all">
+                    {workflowStart.scan_url}
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => setStep("claim")}>
+                    Retour
+                  </Button>
+                  <Button type="button" className="flex-1" onClick={() => setStep("uploads")}>
+                    Continuer vers les pièces
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === "uploads" && (
+              <div className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl border p-4">
+                    <div className="mb-3 flex items-center gap-2 font-medium">
+                      <FileText className="h-4 w-4" />
+                      Procès-verbal (PDF)
+                    </div>
+                    <Input
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      onChange={(event) => setPvPoliceFile(event.target.files?.[0] ?? null)}
+                    />
+                    {pvPoliceFile ? <p className="mt-2 text-xs text-muted-foreground">{pvPoliceFile.name}</p> : null}
+                  </div>
+
+                  <div className="rounded-xl border p-4">
+                    <div className="mb-3 flex items-center gap-2 font-medium">
+                      <Camera className="h-4 w-4" />
+                      Images de l’accident
+                    </div>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(event) => setAccidentImages(Array.from(event.target.files ?? []))}
+                    />
+                    {accidentImages.length > 0 ? (
+                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                        {accidentImages.map((file) => (
+                          <div key={`${file.name}-${file.lastModified}`}>{file.name}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+                  La finalisation crée l’entrée du sinistre, rattache le constat, envoie le PV au module OCR et lance
+                  l’analyse des images pour produire un résultat consolidé prêt pour décision.
+                </div>
+
+                <div className="rounded-xl border p-4">
+                  <p className="mb-3 text-sm font-semibold">Checkpoints de traitement</p>
+                  <div className="space-y-3">
+                    {checkpoints.map((checkpoint) => {
+                      const checkpointState = getCheckpointState(checkpoint.key);
+                      return (
+                        <div key={checkpoint.key} className="flex items-start gap-3">
+                          <div
+                            className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${
+                              checkpointState === "done"
+                                ? "border-green-500 bg-green-500 text-white"
+                                : checkpointState === "active"
+                                  ? "border-blue-500 bg-blue-50 text-blue-600"
+                                  : "border-muted-foreground/30 bg-background text-muted-foreground"
+                            }`}
+                          >
+                            {checkpointState === "done" ? (
+                              <CheckCircle className="h-3.5 w-3.5" />
+                            ) : checkpointState === "active" ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Clock className="h-3.5 w-3.5" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">{checkpoint.label}</p>
+                            <p className="text-xs text-muted-foreground">{checkpoint.description}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => setStep("qr")}>
+                    Retour
+                  </Button>
+                  <Button type="button" className="flex-1 bg-gradient-primary text-primary-foreground" onClick={finishWorkflow} disabled={finishing}>
+                    {finishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Finaliser le dossier
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === "done" && workflowComplete && (
+              <div className="space-y-5">
+                <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="mt-0.5 h-5 w-5 text-green-600" />
+                    <div>
+                      <p className="font-semibold text-green-800">Sinistre créé</p>
+                      <p className="text-sm text-green-700">
+                        Référence: <strong>{workflowComplete.claim.reference}</strong>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl border p-4">
+                    <p className="mb-2 text-sm font-semibold">Décision support</p>
+                    <Badge variant="outline" className="mb-2 capitalize">
+                      {workflowComplete.orchestration.decision_support.decision}
+                    </Badge>
+                    <p className="text-sm text-muted-foreground">
+                      Risque: {workflowComplete.orchestration.decision_support.risk_level}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Montant recommandé: {workflowComplete.orchestration.decision_support.recommended_payout}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border p-4">
+                    <p className="mb-2 text-sm font-semibold">Statut du constat</p>
+                    <p className="text-sm text-muted-foreground">
+                      {workflowComplete.orchestration.consolidated_claim_data.constat.status ?? "En attente"}
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">{secondPartyStatus}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border bg-muted/20 p-4 text-sm">
+                  {workflowComplete.orchestration.decision_support.reasoning}
+                </div>
+
+                <Button className="w-full" onClick={resetWorkflow}>
+                  Fermer
                 </Button>
               </div>
-            </form>
+            )}
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* QR Code Section - Affichage après génération réussie */}
-      {generatedQr && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-emerald-50 border border-emerald-300 rounded-xl p-5">
-          <div className="flex items-start gap-4 mb-4">
-            <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
-              <CheckCircle className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div className="flex-1">
-              <h4 className="font-display font-semibold text-emerald-900 text-sm">Constat créé avec succès</h4>
-              <p className="text-xs text-emerald-700 mt-1">Un code QR a été généré. Partagez-le avec le conducteur 2 pour compléter le constat.</p>
-            </div>
+      <div className="rounded-xl border bg-primary/5 p-5">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 h-5 w-5 text-primary" />
+          <div>
+            <h4 className="text-sm font-semibold">Workflow client</h4>
+            <p className="text-sm text-muted-foreground">
+              Le client voit uniquement ses propres sinistres. La création suit désormais le flux complet: constat
+              initial, QR pour le second conducteur, puis finalisation avec PV et images.
+            </p>
           </div>
-          <div className="rounded-lg border border-emerald-200 p-4 flex items-center justify-center bg-white mb-4">
-            <img src={generatedQr.qrCode} alt="QR code du constat" className="w-48 h-48" />
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-emerald-900">Lien direct (partager avec le conducteur 2):</p>
-            <div className="flex items-center gap-2 bg-white border border-emerald-200 rounded p-2 text-xs break-all">
-              <code className="flex-1 text-emerald-700">{generatedQr.scanUrl}</code>
-              <Button 
-                size="sm" 
-                variant="ghost"
-                onClick={() => {
-                  navigator.clipboard.writeText(generatedQr.scanUrl);
-                  toast({ title: "Lien copié", description: "L'URL a été copiée dans le presse-papiers." });
-                }}
-              >
-                📋
-              </Button>
-            </div>
-          </div>
-        </motion.div>
-      )}
+        </div>
+      </div>
 
-      {/* QR Code Info Banner - Avant génération */}
-      {!generatedQr && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-primary/5 border border-primary/20 rounded-xl p-5 flex items-center gap-4">
-          <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
-            <QrCode className="w-6 h-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h4 className="font-display font-semibold text-foreground text-sm">Constat amiable numérique</h4>
-            <p className="text-xs text-muted-foreground">Créez un nouveau constat pour générer un QR code à partager avec le conducteur 2.</p>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Claims list */}
       <div className="space-y-4">
-        {claims.map((claim, i) => {
-          const config = statusConfig[claim.status];
-          const StatusIcon = config.icon;
-          return (
-            <motion.div
-              key={claim.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="bg-card rounded-xl border shadow-card p-5"
-            >
-              <div className="flex flex-col sm:flex-row justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
-                    <AlertTriangle className="w-5 h-5 text-warning" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-display font-semibold text-foreground">{claim.id}</span>
-                      <Badge variant="outline" className={config.color}>
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {claim.status}
-                      </Badge>
+        {loading ? (
+          <div className="py-12 text-center">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : claims.length === 0 ? (
+          <div className="py-12 text-center">
+            <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
+            <p className="text-muted-foreground">Aucun sinistre déclaré pour le moment.</p>
+            <Button variant="outline" className="mt-4" onClick={() => setShowModal(true)}>
+              Déclarer sinistre
+            </Button>
+          </div>
+        ) : (
+          claims.map((claim) => {
+            const config = statusConfig[claim.status] ?? statusConfig.pending;
+            const StatusIcon = config.icon;
+
+            return (
+              <div key={claim.id} className="rounded-xl border bg-card p-5 shadow-sm">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
+                      <AlertTriangle className="h-5 w-5 text-warning" />
                     </div>
-                    <p className="text-sm text-muted-foreground">{claim.vehicle} · {claim.type} · {claim.date}</p>
-                    <p className="text-sm font-medium text-foreground mt-1">Montant estimé: {claim.amount}</p>
-                    {claim.aiSuggestion && (
-                      <div className="mt-2 inline-flex items-center gap-1 text-xs bg-accent/20 text-accent-foreground px-2 py-1 rounded-md">
-                        🤖 IA: {claim.aiSuggestion}
+
+                    <div>
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className="font-display font-semibold text-foreground">{claim.reference}</span>
+                        <Badge variant="outline" className={config.color}>
+                          <StatusIcon className="mr-1 h-3 w-3" />
+                          {config.label}
+                        </Badge>
                       </div>
-                    )}
+
+                      <p className="text-sm text-muted-foreground">
+                        {[claim.vehicle, claim.type, claim.date].filter(Boolean).join(" · ")}
+                      </p>
+
+                      {claim.location ? (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Lieu: {claim.location}
+                        </p>
+                      ) : null}
+
+                      {claim.amount != null ? (
+                        <p className="mt-2 text-sm font-medium text-foreground">
+                          Montant: {claim.amount.toLocaleString()} TND
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
+
+                  <Button variant="ghost" size="sm" className="self-start">
+                    <Eye className="mr-1 h-4 w-4" />
+                    Détails
+                  </Button>
                 </div>
-                <Button variant="ghost" size="sm" className="self-start">
-                  <Eye className="w-4 h-4 mr-1" /> Détails
-                </Button>
               </div>
-            </motion.div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );

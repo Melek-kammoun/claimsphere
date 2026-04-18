@@ -133,7 +133,7 @@ describe('ConstatsService', () => {
       const result = await service.createConstat(testUser.id, createDto);
 
       expect(result).toBeDefined();
-      expect(result.status).toBe(ConstatStatus.PENDING);
+      expect(result.statut).toBe(ConstatStatus.PENDING);
       expect(mockConstatRepository.create).toHaveBeenCalled();
       expect(mockConstatRepository.save).toHaveBeenCalled();
     });
@@ -226,14 +226,14 @@ describe('ConstatsService', () => {
       );
 
       expect(result).toBeDefined();
-      expect(result.status).toBe(ConstatStatus.COMPLETE);
+      expect(result.statut).toBe(ConstatStatus.COMPLETE);
     });
 
     it('should fail if user tries to complete their own constat', async () => {
       const completeDto = {
-        user_b_data: { full_name: 'Test' },
-        vehicle_b_data: { plate: 'AB-123' },
-        insurance_b_data: { company: 'AXA' },
+        user_b_data: { full_name: 'Test', phone: '+21600000000', email: 'test@example.com' },
+        vehicle_b_data: { plate: 'AB-123', brand: 'Peugeot', model: '208' },
+        insurance_b_data: { company: 'AXA', policy_number: 'POL-000000' },
         signature_b: 'signature',
       };
 
@@ -256,9 +256,9 @@ describe('ConstatsService', () => {
       mockConstatRepository.findOne.mockResolvedValueOnce(completedConstat);
 
       const completeDto = {
-        user_b_data: { full_name: 'Test' },
-        vehicle_b_data: { plate: 'AB-123' },
-        insurance_b_data: { company: 'AXA' },
+        user_b_data: { full_name: 'Test', phone: '+21600000000', email: 'test@example.com' },
+        vehicle_b_data: { plate: 'AB-123', brand: 'Peugeot', model: '208' },
+        insurance_b_data: { company: 'AXA', policy_number: 'POL-000000' },
         signature_b: 'signature',
       };
 

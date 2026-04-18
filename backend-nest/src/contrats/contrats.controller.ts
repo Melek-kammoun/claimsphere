@@ -3,21 +3,33 @@ import {
   Controller,
   Get,
   Param,
-  ParseIntPipe,
   Patch,
   Post,
   Query,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateContratDto, UpdateContratStatusDto } from './contrats.dto';
 import { ContratsService } from './contrats.service';
+
+interface AuthRequest {
+  user: { id: string };
+}
 
 @Controller('api/contrats')
 export class ContratsController {
   constructor(private readonly contratsService: ContratsService) {}
 
   @Post()
-  createContrat(@Body() createContratDto: CreateContratDto) {
-    return this.contratsService.createContrat(createContratDto);
+  @UseGuards(JwtAuthGuard)
+  createContrat(@Body() dto: CreateContratDto, @Req() req: AuthRequest) {
+    // FIX: always use the authenticated user's ID, ignore any client_id from the body.
+    // This prevents a client from creating contracts on behalf of other users.
+    return this.contratsService.createContrat({
+      ...dto,
+      client_id: req.user.id,
+    });
   }
 
   @Get()
@@ -25,9 +37,16 @@ export class ContratsController {
     return this.contratsService.getAllContrats(status);
   }
 
+  // FIX: /pending kept as a convenience alias — delegates to getAllContrats('non_traite')
   @Get('pending')
   getPendingContrats() {
     return this.contratsService.getPendingContrats();
+  }
+
+  @Get('client/me')
+  @UseGuards(JwtAuthGuard)
+  getMyContrats(@Req() req: AuthRequest) {
+    return this.contratsService.getContratsByClientId(req.user.id);
   }
 
   @Get('client/:clientId')
@@ -36,18 +55,15 @@ export class ContratsController {
   }
 
   @Get(':id')
-  getContratById(@Param('id', ParseIntPipe) id: number) {
+  getContratById(@Param('id') id: string) {
     return this.contratsService.getContratById(id);
   }
 
   @Patch(':id/status')
   updateContratStatus(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateContratStatusDto: UpdateContratStatusDto,
+    @Param('id') id: string,
+    @Body() dto: UpdateContratStatusDto,
   ) {
-    return this.contratsService.updateContratStatus(
-      id,
-      updateContratStatusDto.status,
-    );
+    return this.contratsService.updateContratStatus(id, dto.status);
   }
 }

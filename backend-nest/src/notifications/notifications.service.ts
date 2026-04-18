@@ -1,26 +1,53 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { SupabaseService } from '../supabase/supabase.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
-import { UpdateNotificationDto } from './dto/update-notification.dto';
 
 @Injectable()
 export class NotificationsService {
-  create(createNotificationDto: CreateNotificationDto) {
-    return 'This action adds a new notification';
+  constructor(private readonly supabase: SupabaseService) {}
+
+  async create(dto: CreateNotificationDto) {
+    const { data, error } = await this.supabase
+      .getClient()
+      .from('notifications')
+      .insert({ user_id: dto.user_id, message: dto.message, read: dto.read ?? false })
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
   }
 
-  findAll() {
-    return `This action returns all notifications`;
+  async findByUser(userId: string) {
+    const { data, error } = await this.supabase
+      .getClient()
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return data;
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} notification`;
+  async markRead(id: number) {
+    const { data, error } = await this.supabase
+      .getClient()
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    if (!data) throw new NotFoundException(`Notification ${id} not found`);
+    return data;
   }
 
-  update(id: number, updateNotificationDto: UpdateNotificationDto) {
-    return `This action updates a #${id} notification`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} notification`;
+  async remove(id: number) {
+    const { error } = await this.supabase
+      .getClient()
+      .from('notifications')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(error.message);
+    return { deleted: true };
   }
 }

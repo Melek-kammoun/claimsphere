@@ -1,8 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:5000";
 
-if (!import.meta.env.VITE_API_URL) {
-  console.warn("VITE_API_URL non défini, utilisation de http://localhost:5000");
-}
 export class ApiError extends Error {
   status: number;
   details: unknown;
@@ -19,8 +16,19 @@ type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
+const getToken = (): string | null => {
+  const raw = localStorage.getItem("sb-raizxiwxrkgnhnlccvcx-auth-token");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { access_token?: string };
+    return parsed.access_token ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const token = localStorage.getItem("token");
+  const token = getToken();
   const url = /^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path}`;
 
   const response = await fetch(url, {
@@ -28,7 +36,6 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(localStorage.getItem("role") ? { "x-user-role": localStorage.getItem("role") as string } : {}),
       ...(options.headers ?? {}),
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -40,15 +47,15 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     : await response.text();
 
   if (!response.ok) {
+    const errorPayload = payload as Record<string, unknown>;
     const message =
       typeof payload === "object" && payload !== null
         ? "message" in payload
-          ? String(payload.message)
+          ? String(errorPayload.message)
           : "error" in payload
-            ? String(payload.error)
-            : "Une erreur est survenue pendant l'appel API."
-        : "Une erreur est survenue pendant l'appel API.";
-
+            ? String(errorPayload.error)
+            : "Une erreur est survenue."
+        : "Une erreur est survenue.";
     throw new ApiError(message, response.status, payload);
   }
 

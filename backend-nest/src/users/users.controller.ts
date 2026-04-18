@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Patch, Param, Body, UseGuards, Req } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 
@@ -6,36 +7,43 @@ import { CreateUserDto } from './dto/create-user.dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Get()                          // GET /users → tous les users
-  findAll() {
-    return this.usersService.findAll();
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMe(@Req() req: any) {
+    const user = await this.usersService.findOne(req.user.id);
+    return { success: true, user };
   }
 
-  @Get('agents')                  // GET /users/agents → seulement les agents
-  findAgents() {
-    return this.usersService.findByRole('agent');
+  @Get('agents')
+  async findAgents() {
+    return { success: true, data: await this.usersService.findByRole('agent') };
   }
 
-  @Get('clients')                 // GET /ux  sers/clients → seulement les clients
-  findClients() {
-    return this.usersService.findByRole('client');
+  @Get('clients')
+  async findClients() {
+    return { success: true, data: await this.usersService.findByRole('client') };
   }
 
- @Post()
-create(@Body() dto: CreateUserDto) {
-  return this.usersService.create(dto);
-}
-
-  @Post('login')
-  login(
-    @Body() body: { identifier: string; password: string },
-  ) {
-    return this.usersService.login(body.identifier, body.password);
+  @Get()
+  async findAll() {
+    return { success: true, data: await this.usersService.findAll() };
   }
 
-  // users/users.controller.ts
-@Delete(':id')
-async remove(@Param('id') id: string) { // ← string au lieu de number
-  return this.usersService.remove(id);
-}
+  @Post()
+  async create(@Body() dto: CreateUserDto) {
+    return { success: true, data: await this.usersService.create(dto) };
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  async update(@Param('id') id: string, @Body() body: Partial<CreateUserDto>) {
+    return { success: true, data: await this.usersService.update(id, body as any) };
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async remove(@Param('id') id: string) {
+    await this.usersService.remove(id);
+    return { success: true };
+  }
 }

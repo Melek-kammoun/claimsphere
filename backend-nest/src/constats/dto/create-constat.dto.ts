@@ -1,37 +1,133 @@
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsEmail,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+export class ConstatUserADataDto {
+  @IsString()
+  @IsNotEmpty()
+  full_name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  phone: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsOptional()
+  @IsString()
+  driving_license?: string;
+}
+
+export class ConstatVehicleADataDto {
+  @IsString()
+  @IsNotEmpty()
+  plate: string;
+
+  @IsOptional()
+  @IsString()
+  brand?: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  year?: number;
+
+  @IsOptional()
+  @IsString()
+  vin?: string;
+
+  @IsOptional()
+  @IsString()
+  registration_date?: string;
+}
+
+export class ConstatInsuranceADataDto {
+  @IsString()
+  @IsNotEmpty()
+  company: string;
+
+  @IsString()
+  @IsNotEmpty()
+  policy_number: string;
+
+  @IsOptional()
+  @IsString()
+  agent_name?: string;
+
+  @IsOptional()
+  @IsString()
+  agent_phone?: string;
+}
+
+export class ConstatAccidentDetailsDto {
+  @IsString()
+  @IsNotEmpty()
+  date: string;
+
+  @IsOptional()
+  @IsString()
+  time?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  location: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(5000)
+  description: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  witnesses?: string[];
+
+  @IsOptional()
+  @IsString()
+  police_report?: string;
+}
+
 export class CreateConstatDto {
-  // User A (Creator)
-  user_a_data: {
-    full_name: string;
-    phone: string;
-    email: string;
-    driving_license?: string;
-  };
+  @ValidateNested()
+  @Type(() => ConstatUserADataDto)
+  user_a_data: ConstatUserADataDto;
 
-  vehicle_a_data: {
-    plate: string;
-    brand: string;
-    model: string;
-    year?: number;
-    vin?: string;
-    registration_date?: string;
-  };
+  @ValidateNested()
+  @Type(() => ConstatVehicleADataDto)
+  vehicle_a_data: ConstatVehicleADataDto;
 
-  insurance_a_data: {
-    company: string;
-    policy_number: string;
-    agent_name?: string;
-    agent_phone?: string;
-  };
+  @ValidateNested()
+  @Type(() => ConstatInsuranceADataDto)
+  insurance_a_data: ConstatInsuranceADataDto;
 
-  accident_details: {
-    date: string;
-    time: string;
-    location: string;
-    description: string;
-    witnesses?: string[];
-    police_report?: string;
-  };
+  @ValidateNested()
+  @Type(() => ConstatAccidentDetailsDto)
+  accident_details: ConstatAccidentDetailsDto;
 
-  photos_a?: string[]; // URLs de photos
-  signature_a: string; // Base64 ou URL
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  photos_a?: string[];
+
+  @IsString()
+  @IsNotEmpty()
+  signature_a: string;
 }
