@@ -156,8 +156,10 @@ export class ClaimsWorkflowService {
 
     await this.claimsService.updateWorkflowData(claim.id, {
       workflow_status: 'completed',
+      processed_at: new Date().toISOString(),
       qr_token: payload.qr_token,
       constat_id: constat.id,
+      document_ids: imageDocuments.map((doc) => doc.id),
       uploaded_documents: {
         pv_police: pvDocument,
         accident_images: imageDocuments,

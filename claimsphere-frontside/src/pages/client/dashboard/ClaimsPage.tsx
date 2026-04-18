@@ -90,6 +90,11 @@ interface WorkflowCompleteResponse {
 type WorkflowStep = "claim" | "qr" | "uploads" | "done";
 type FinalizationCheckpoint = "claim" | "documents" | "ocr" | "damage" | "merge";
 
+interface SupportingDocsState {
+  claimId: string;
+  open: boolean;
+}
+
 const statusConfig: Record<ClaimStatus, { label: string; color: string; icon: typeof CheckCircle }> = {
   pending: { label: "En attente", color: "bg-yellow-50 text-yellow-700 border-yellow-200", icon: Clock },
   in_review: { label: "En traitement", color: "bg-blue-50 text-blue-700 border-blue-200", icon: Clock },
@@ -122,6 +127,10 @@ export default function ClaimsPage() {
   const [pvPoliceFile, setPvPoliceFile] = useState<File | null>(null);
   const [accidentImages, setAccidentImages] = useState<File[]>([]);
   const [activeCheckpoint, setActiveCheckpoint] = useState<FinalizationCheckpoint | null>(null);
+  const [supportingDocsDialog, setSupportingDocsDialog] = useState<SupportingDocsState>({ claimId: "", open: false });
+  const [rapportExpertFile, setRapportExpertFile] = useState<File | null>(null);
+  const [devisFile, setDevisFile] = useState<File | null>(null);
+  const [uploadingSupportingDocs, setUploadingSupportingDocs] = useState(false);
 
   const [form, setForm] = useState({
     contract_id: "",
@@ -183,6 +192,8 @@ export default function ClaimsPage() {
     setPvPoliceFile(null);
     setAccidentImages([]);
     setActiveCheckpoint(null);
+    setRapportExpertFile(null);
+    setDevisFile(null);
     setForm({
       contract_id: "",
       type: "accident",
@@ -396,6 +407,69 @@ export default function ClaimsPage() {
     if (checkpointIndex < currentIndex) return "done";
     if (checkpointIndex === currentIndex) return "active";
     return "pending";
+  };
+
+  const uploadSupportingDocuments = async () => {
+    if (!supportingDocsDialog.claimId) return;
+    if (!rapportExpertFile && !devisFile) {
+      toast({
+        title: "Pièces manquantes",
+        description: "Ajoutez au moins un rapport expert ou un devis.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadingSupportingDocs(true);
+    try {
+      const uploadSingle = async (file: File, endpoint: string) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("claim_id", supportingDocsDialog.claimId);
+
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: "POST",
+          body: formData,
+          headers: {
+            Authorization: `Bearer ${getToken()}`,
+          },
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(typeof payload?.message === "string" ? payload.message : "Upload impossible.");
+        }
+      };
+
+      if (rapportExpertFile) {
+        await uploadSingle(rapportExpertFile, "/api/ocr/upload-rapport-expert");
+      }
+
+      if (devisFile) {
+        await uploadSingle(devisFile, "/api/ocr/upload-devis");
+      }
+
+      await apiRequest(`/api/orchestrator/analyze/${supportingDocsDialog.claimId}`, {
+        method: "POST",
+      });
+
+      await loadClaims();
+      setSupportingDocsDialog({ claimId: "", open: false });
+      setRapportExpertFile(null);
+      setDevisFile(null);
+      toast({
+        title: "Pièces ajoutées",
+        description: "Les nouvelles pièces ont été analysées et le dossier a été régénéré.",
+      });
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: error instanceof Error ? error.message : "Impossible d'ajouter les pièces.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingSupportingDocs(false);
+    }
   };
 
   return (
@@ -798,19 +872,98 @@ export default function ClaimsPage() {
                           Montant: {claim.amount.toLocaleString()} TND
                         </p>
                       ) : null}
+
+                      {claim.status === "documents_requested" ? (
+                        <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-800">
+                          L'agent a demandé des pièces complémentaires. Vous pouvez ajouter un rapport expert ou un devis.
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
-                  <Button variant="ghost" size="sm" className="self-start">
-                    <Eye className="mr-1 h-4 w-4" />
-                    Détails
-                  </Button>
+                  <div className="flex flex-wrap gap-2 self-start">
+                    {claim.status === "documents_requested" ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSupportingDocsDialog({ claimId: claim.id, open: true })}
+                      >
+                        <FileText className="mr-1 h-4 w-4" />
+                        Ajouter pièces
+                      </Button>
+                    ) : null}
+                    <Button variant="ghost" size="sm" className="self-start">
+                      <Eye className="mr-1 h-4 w-4" />
+                      Détails
+                    </Button>
+                  </div>
                 </div>
               </div>
             );
           })
         )}
       </div>
+
+      <Dialog
+        open={supportingDocsDialog.open}
+        onOpenChange={(open) => {
+          setSupportingDocsDialog((prev) => ({ ...prev, open }));
+          if (!open) {
+            setRapportExpertFile(null);
+            setDevisFile(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">Ajouter des pièces complémentaires</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+              Ajoutez les pièces demandées par l’agent. Le dossier sera réanalysé automatiquement après l’upload.
+            </div>
+
+            <div className="space-y-2">
+              <Label>Rapport expert (PDF)</Label>
+              <Input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={(event) => setRapportExpertFile(event.target.files?.[0] ?? null)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Devis garage (PDF)</Label>
+              <Input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={(event) => setDevisFile(event.target.files?.[0] ?? null)}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setSupportingDocsDialog({ claimId: "", open: false })}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                className="flex-1"
+                disabled={uploadingSupportingDocs}
+                onClick={() => void uploadSupportingDocuments()}
+              >
+                {uploadingSupportingDocs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Envoyer et régénérer
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
