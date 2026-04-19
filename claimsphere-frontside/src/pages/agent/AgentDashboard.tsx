@@ -41,6 +41,9 @@ type ClaimApiResponse = {
   description: string | null;
   type: string | null;
   vehicle: string | null;
+  date?: string | null;
+  location?: string | null;
+  contract_id?: string | null;
   amount: number | null;
   ai_suggestion: string | null;
   documents: Record<string, any> | null;
@@ -76,11 +79,11 @@ const claimStatusColors: Record<ClaimStatus, string> = {
 };
 
 const claimStatusLabels: Record<ClaimStatus, string> = {
-  pending: "Non traité",
+  pending: "Non traite",
   in_review: "En cours",
-  documents_requested: "En cours - documents demandés",
-  approved: "Traité - accepté",
-  rejected: "Traité - refusé",
+  documents_requested: "En cours - documents demandes",
+  approved: "Traite - accepte",
+  rejected: "Traite - refuse",
 };
 
 const contractStatusColors: Record<ContractStatus, string> = {
@@ -90,9 +93,9 @@ const contractStatusColors: Record<ContractStatus, string> = {
 };
 
 const contractStatusLabels: Record<ContractStatus, string> = {
-  non_traite: "Non traité",
-  approuve: "Approuvé",
-  refuse: "Refusé",
+  non_traite: "Non traite",
+  approuve: "Approuve",
+  refuse: "Refuse",
 };
 
 type ClaimDetail = ClaimApiResponse & {
@@ -160,13 +163,13 @@ export default function AgentDashboard() {
       ]);
 
       setClaims(Array.isArray(claimsResponse.data) ? claimsResponse.data : []);
-
-      const rawContracts = Array.isArray(contractsResponse)
-        ? contractsResponse
-        : Array.isArray(contractsResponse.data)
-          ? contractsResponse.data
-          : [];
-      setContracts(rawContracts);
+      setContracts(
+        Array.isArray(contractsResponse)
+          ? contractsResponse
+          : Array.isArray(contractsResponse.data)
+            ? contractsResponse.data
+            : [],
+      );
     } catch (error) {
       toast({
         title: "Erreur",
@@ -216,7 +219,7 @@ export default function AgentDashboard() {
     } catch (error) {
       toast({
         title: "Erreur",
-        description: error instanceof Error ? error.message : "Impossible de charger le détail du sinistre.",
+        description: error instanceof Error ? error.message : "Impossible de charger le detail du sinistre.",
         variant: "destructive",
       });
     }
@@ -234,6 +237,7 @@ export default function AgentDashboard() {
           claims.find((claim) => claim.id === claimId)?.documents?.consolidated_result?.decision_support?.recommended_payout ??
           selectedClaim?.amount ??
           0;
+
         await apiRequest(`/api/claims/${claimId}/approve`, {
           method: "PATCH",
           body: { amount: payout },
@@ -242,9 +246,7 @@ export default function AgentDashboard() {
         await apiRequest(`/api/claims/${claimId}/reject`, {
           method: "PATCH",
           body: {
-            reason:
-              selectedClaim?.consolidated_result?.decision_support?.reasoning ??
-              "Refus après analyse du dossier.",
+            reason: selectedClaim?.consolidated_result?.decision_support?.reasoning ?? "Refus apres analyse du dossier.",
           },
         });
       } else if (action === "request-devis" || action === "request-rapport") {
@@ -264,20 +266,6 @@ export default function AgentDashboard() {
       if (detailOpen) {
         await openDetails(claimId);
       }
-
-      const description =
-        action === "request-devis"
-          ? "Le client a été notifié pour ajouter un devis."
-          : action === "request-rapport"
-            ? "Le client a été notifié pour ajouter un rapport expert."
-            : action === "reanalyze"
-              ? "Le dossier a été régénéré avec les pièces disponibles."
-              : "La décision a été enregistrée et le client a été notifié.";
-
-      toast({
-        title: "Action effectuée",
-        description,
-      });
     } catch (error) {
       toast({
         title: "Erreur",
@@ -296,26 +284,77 @@ export default function AgentDashboard() {
         method: "PATCH",
         body: { status },
       });
-
       await fetchDashboardData();
-
-      toast({
-        title: "Contrat mis à jour",
-        description:
-          status === "approuve"
-            ? "Le contrat a été approuvé."
-            : "Le contrat a été refusé.",
-      });
     } catch (error) {
       toast({
         title: "Erreur",
-        description: error instanceof Error ? error.message : "Mise à jour du contrat impossible.",
+        description: error instanceof Error ? error.message : "Mise a jour du contrat impossible.",
         variant: "destructive",
       });
     } finally {
       setActionLoading(null);
     }
   };
+
+  const renderClaimActions = (claim: ClaimApiResponse, block: "pending" | "in_progress" | "processed") => (
+    <>
+      <Button variant="ghost" size="sm" onClick={() => void openDetails(claim.id)}>
+        <Eye className="mr-1 h-4 w-4" />
+        Details
+      </Button>
+
+      {(block === "pending" || block === "in_progress") && (
+        <>
+          <Button
+            size="sm"
+            className="bg-success text-success-foreground hover:bg-success/90"
+            disabled={actionLoading === `${claim.id}:approve`}
+            onClick={() => void runClaimAction(claim.id, "approve")}
+          >
+            {actionLoading === `${claim.id}:approve` ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ThumbsUp className="mr-1 h-4 w-4" />Accepter</>}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={actionLoading === `${claim.id}:reject`}
+            onClick={() => void runClaimAction(claim.id, "reject")}
+          >
+            {actionLoading === `${claim.id}:reject` ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ThumbsDown className="mr-1 h-4 w-4" />Refuser</>}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={actionLoading === `${claim.id}:request-devis`}
+            onClick={() => void runClaimAction(claim.id, "request-devis")}
+          >
+            {actionLoading === `${claim.id}:request-devis` ? <Loader2 className="h-4 w-4 animate-spin" /> : <><AlertTriangle className="mr-1 h-4 w-4" />Demander devis</>}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={actionLoading === `${claim.id}:request-rapport`}
+            onClick={() => void runClaimAction(claim.id, "request-rapport")}
+          >
+            {actionLoading === `${claim.id}:request-rapport` ? <Loader2 className="h-4 w-4 animate-spin" /> : <><FileWarning className="mr-1 h-4 w-4" />Rapport expert</>}
+          </Button>
+        </>
+      )}
+
+      {block === "in_progress" && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={actionLoading === `${claim.id}:reanalyze`}
+          onClick={() => void runClaimAction(claim.id, "reanalyze")}
+        >
+          {actionLoading === `${claim.id}:reanalyze` ? <Loader2 className="h-4 w-4 animate-spin" /> : <><RefreshCw className="mr-1 h-4 w-4" />Regenerer</>}
+        </Button>
+      )}
+    </>
+  );
 
   const renderClaimCard = (claim: ClaimApiResponse, index: number, block: "pending" | "in_progress" | "processed") => {
     const decisionSupport = claim.documents?.consolidated_result?.decision_support;
@@ -347,20 +386,17 @@ export default function AgentDashboard() {
             </div>
 
             <p className="text-sm text-muted-foreground">
-              {[claim.type, claim.vehicle].filter(Boolean).join(" · ")}
+              {[claim.type, claim.vehicle, claim.date].filter(Boolean).join(" · ")}
             </p>
-            <p className="text-sm text-muted-foreground">
-              {claim.description || "Aucune description fournie."}
-            </p>
+            <p className="text-sm text-muted-foreground">{claim.description || "Aucune description fournie."}</p>
+            {claim.location ? <p className="text-sm text-muted-foreground">Lieu: {claim.location}</p> : null}
 
             {offerCoverage ? (
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                 <p className="font-medium">{offerCoverage.offer_title}</p>
                 <p className="text-muted-foreground">{offerCoverage.coverage_reason}</p>
                 {offerCoverage.missing_requirements?.length > 0 ? (
-                  <p className="mt-1 text-orange-700">
-                    Pièces manquantes: {offerCoverage.missing_requirements.join(", ")}
-                  </p>
+                  <p className="mt-1 text-orange-700">Pieces manquantes: {offerCoverage.missing_requirements.join(", ")}</p>
                 ) : null}
               </div>
             ) : null}
@@ -369,8 +405,8 @@ export default function AgentDashboard() {
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-4">
                   <span>Fraude: <strong>{decisionSupport.fraud_score}</strong></span>
-                  <span>Cohérence: <strong>{decisionSupport.coherence_score}</strong></span>
-                  <span>Remboursement suggéré: <strong>{decisionSupport.recommended_payout} TND</strong></span>
+                  <span>Coherence: <strong>{decisionSupport.coherence_score}</strong></span>
+                  <span>Remboursement suggere: <strong>{decisionSupport.recommended_payout} TND</strong></span>
                 </div>
                 <p className="mt-2 text-muted-foreground">{decisionSupport.reasoning}</p>
               </div>
@@ -390,172 +426,15 @@ export default function AgentDashboard() {
               <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm">
                 <div className="mb-1 flex items-center gap-2 font-medium text-orange-800">
                   <FileWarning className="h-4 w-4" />
-                  Incohérences détectées
+                  Incoherences detectees
                 </div>
-                <p className="text-orange-700">
-                  {coherenceChecks.slice(0, 2).map((item: { message: string }) => item.message).join(" | ")}
-                </p>
+                <p className="text-orange-700">{coherenceChecks.slice(0, 2).map((item: { message: string }) => item.message).join(" | ")}</p>
               </div>
             ) : null}
           </div>
 
           <div className="flex flex-row flex-wrap gap-2 self-start lg:w-[240px] lg:flex-col">
-            <Button variant="ghost" size="sm" onClick={() => void openDetails(claim.id)}>
-              <Eye className="mr-1 h-4 w-4" />
-              Détails
-            </Button>
-
-            {block === "pending" ? (
-              <>
-                <Button
-                  size="sm"
-                  className="bg-success text-success-foreground hover:bg-success/90"
-                  disabled={actionLoading === `${claim.id}:approve`}
-                  onClick={() => void runClaimAction(claim.id, "approve")}
-                >
-                  {actionLoading === `${claim.id}:approve` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsUp className="mr-1 h-4 w-4" />
-                      Accepter
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={actionLoading === `${claim.id}:reject`}
-                  onClick={() => void runClaimAction(claim.id, "reject")}
-                >
-                  {actionLoading === `${claim.id}:reject` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsDown className="mr-1 h-4 w-4" />
-                      Refuser
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={actionLoading === `${claim.id}:request-devis`}
-                  onClick={() => void runClaimAction(claim.id, "request-devis")}
-                >
-                  {actionLoading === `${claim.id}:request-devis` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <AlertTriangle className="mr-1 h-4 w-4" />
-                      Demander devis
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={actionLoading === `${claim.id}:request-rapport`}
-                  onClick={() => void runClaimAction(claim.id, "request-rapport")}
-                >
-                  {actionLoading === `${claim.id}:request-rapport` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <FileWarning className="mr-1 h-4 w-4" />
-                      Rapport expert
-                    </>
-                  )}
-                </Button>
-              </>
-            ) : null}
-
-            {block === "in_progress" ? (
-              <>
-                <Button
-                  size="sm"
-                  className="bg-success text-success-foreground hover:bg-success/90"
-                  disabled={actionLoading === `${claim.id}:approve`}
-                  onClick={() => void runClaimAction(claim.id, "approve")}
-                >
-                  {actionLoading === `${claim.id}:approve` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsUp className="mr-1 h-4 w-4" />
-                      Accepter
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={actionLoading === `${claim.id}:reject`}
-                  onClick={() => void runClaimAction(claim.id, "reject")}
-                >
-                  {actionLoading === `${claim.id}:reject` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsDown className="mr-1 h-4 w-4" />
-                      Refuser
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={actionLoading === `${claim.id}:request-devis`}
-                  onClick={() => void runClaimAction(claim.id, "request-devis")}
-                >
-                  {actionLoading === `${claim.id}:request-devis` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <AlertTriangle className="mr-1 h-4 w-4" />
-                      Demander devis
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={actionLoading === `${claim.id}:request-rapport`}
-                  onClick={() => void runClaimAction(claim.id, "request-rapport")}
-                >
-                  {actionLoading === `${claim.id}:request-rapport` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <FileWarning className="mr-1 h-4 w-4" />
-                      Rapport expert
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={actionLoading === `${claim.id}:reanalyze`}
-                  onClick={() => void runClaimAction(claim.id, "reanalyze")}
-                >
-                  {actionLoading === `${claim.id}:reanalyze` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-1 h-4 w-4" />
-                      Régénérer
-                    </>
-                  )}
-                </Button>
-              </>
-            ) : null}
+            {renderClaimActions(claim, block)}
           </div>
         </div>
       </motion.div>
@@ -564,33 +443,21 @@ export default function AgentDashboard() {
 
   const renderClaimsList = (items: ClaimApiResponse[], block: "pending" | "in_progress" | "processed") => {
     if (loading) {
-      return (
-        <div className="py-10 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      );
+      return <div className="py-10 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" /></div>;
     }
-
     if (items.length === 0) {
-      return <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Aucun sinistre trouvé.</div>;
+      return <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Aucun sinistre trouve.</div>;
     }
-
     return <div className="space-y-4">{items.map((claim, index) => renderClaimCard(claim, index, block))}</div>;
   };
 
   const renderContractsList = (items: ContractApiResponse[], block: "non_traite" | "approuve") => {
     if (loading) {
-      return (
-        <div className="py-10 text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      );
+      return <div className="py-10 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" /></div>;
     }
-
     if (items.length === 0) {
-      return <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Aucun contrat trouvé.</div>;
+      return <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Aucun contrat trouve.</div>;
     }
-
     return (
       <div className="space-y-4">
         {items.map((contract, index) => (
@@ -614,7 +481,7 @@ export default function AgentDashboard() {
               {[contract.type, contract.marque, contract.modele].filter(Boolean).join(" · ") || "Contrat auto"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Client: {contract.client_id} · Créé le {new Date(contract.created_at).toLocaleDateString("fr-FR")}
+              Client: {contract.client_id} · Cree le {new Date(contract.created_at).toLocaleDateString("fr-FR")}
             </p>
 
             {block === "non_traite" ? (
@@ -625,30 +492,15 @@ export default function AgentDashboard() {
                   disabled={actionLoading === `contract:${contract.id}:approuve`}
                   onClick={() => void runContractAction(contract.id, "approuve")}
                 >
-                  {actionLoading === `contract:${contract.id}:approuve` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsUp className="mr-1 h-4 w-4" />
-                      Accepter
-                    </>
-                  )}
+                  {actionLoading === `contract:${contract.id}:approuve` ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ThumbsUp className="mr-1 h-4 w-4" />Accepter</>}
                 </Button>
-
                 <Button
                   size="sm"
                   variant="destructive"
                   disabled={actionLoading === `contract:${contract.id}:refuse`}
                   onClick={() => void runContractAction(contract.id, "refuse")}
                 >
-                  {actionLoading === `contract:${contract.id}:refuse` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsDown className="mr-1 h-4 w-4" />
-                      Refuser
-                    </>
-                  )}
+                  {actionLoading === `contract:${contract.id}:refuse` ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ThumbsDown className="mr-1 h-4 w-4" />Refuser</>}
                 </Button>
               </div>
             ) : null}
@@ -659,10 +511,10 @@ export default function AgentDashboard() {
   };
 
   const stats = [
-    { label: "Sinistres non traités", value: groupedClaims.pending.length, icon: Clock, color: "text-warning" },
+    { label: "Sinistres non traites", value: groupedClaims.pending.length, icon: Clock, color: "text-warning" },
     { label: "Sinistres en cours", value: groupedClaims.in_progress.length, icon: Bot, color: "text-primary" },
-    { label: "Contrats non traités", value: groupedContracts.non_traite.length, icon: AlertTriangle, color: "text-orange-600" },
-    { label: "Sinistres traités", value: groupedClaims.processed.length, icon: CheckCircle, color: "text-success" },
+    { label: "Contrats non traites", value: groupedContracts.non_traite.length, icon: AlertTriangle, color: "text-orange-600" },
+    { label: "Sinistres traites", value: groupedClaims.processed.length, icon: CheckCircle, color: "text-success" },
   ];
 
   const selectedSupport = selectedClaim?.consolidated_result?.decision_support;
@@ -715,12 +567,10 @@ export default function AgentDashboard() {
           <section className="space-y-4">
             <div className="rounded-xl border bg-card p-4 shadow-card">
               <h2 className="font-display text-xl font-bold text-foreground">Contracts Section</h2>
-              <p className="text-sm text-muted-foreground">
-                Contrats non traités et contrats approuvés visibles dans deux sous-parties.
-              </p>
+              <p className="text-sm text-muted-foreground">Contrats non traites et contrats approuves.</p>
               <TabsList className="mt-4 grid w-full grid-cols-2">
-                <TabsTrigger value="contracts-pending">Contrats non traités</TabsTrigger>
-                <TabsTrigger value="contracts-approved">Contrats approuvés</TabsTrigger>
+                <TabsTrigger value="contracts-pending">Contrats non traites</TabsTrigger>
+                <TabsTrigger value="contracts-approved">Contrats approuves</TabsTrigger>
               </TabsList>
             </div>
 
@@ -736,13 +586,11 @@ export default function AgentDashboard() {
           <section className="space-y-4">
             <div className="rounded-xl border bg-card p-4 shadow-card">
               <h2 className="font-display text-xl font-bold text-foreground">Claims Section</h2>
-              <p className="text-sm text-muted-foreground">
-                Les nouveaux sinistres arrivent dans Non traité, puis basculent en cours ou traités selon l&apos;action de l&apos;agent.
-              </p>
+              <p className="text-sm text-muted-foreground">Non traite, en cours et traite.</p>
               <TabsList className="mt-4 grid w-full grid-cols-3">
-                <TabsTrigger value="claims-pending">Non traité</TabsTrigger>
+                <TabsTrigger value="claims-pending">Non traite</TabsTrigger>
                 <TabsTrigger value="claims-progress">En cours</TabsTrigger>
-                <TabsTrigger value="claims-processed">Traité</TabsTrigger>
+                <TabsTrigger value="claims-processed">Traite</TabsTrigger>
               </TabsList>
             </div>
 
@@ -764,31 +612,44 @@ export default function AgentDashboard() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display">Détail sinistre {selectedClaim?.reference}</DialogTitle>
+            <DialogTitle className="font-display">Detail sinistre {selectedClaim?.reference}</DialogTitle>
           </DialogHeader>
 
           {selectedClaim ? (
             <div className="space-y-5">
+              <div className="rounded-xl border p-4">
+                <p className="mb-3 text-sm font-semibold">Informations du sinistre</p>
+                <div className="grid gap-3 text-sm md:grid-cols-2">
+                  <p><span className="font-medium">Reference:</span> {selectedClaim.reference}</p>
+                  <p><span className="font-medium">Type:</span> {selectedClaim.type ?? "Non renseigne"}</p>
+                  <p><span className="font-medium">Date:</span> {selectedClaim.date ?? "Non renseignee"}</p>
+                  <p><span className="font-medium">Lieu:</span> {selectedClaim.location ?? "Non renseigne"}</p>
+                  <p><span className="font-medium">Vehicule:</span> {selectedClaim.vehicle ?? "Non renseigne"}</p>
+                  <p><span className="font-medium">Contrat:</span> {selectedClaim.contract_id ?? "Non renseigne"}</p>
+                </div>
+                <div className="mt-3 rounded-lg bg-muted/30 p-3 text-sm text-muted-foreground">
+                  {selectedClaim.description ?? "Aucune description fournie."}
+                </div>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-xl border p-4">
-                  <p className="mb-2 text-sm font-semibold">Décision orchestrateur</p>
+                  <p className="mb-2 text-sm font-semibold">Decision orchestrateur</p>
                   <p className="text-sm text-muted-foreground">
-                    {selectedSupport?.reasoning ?? selectedClaim.ai_suggestion ?? "Aucune décision consolidée."}
+                    {selectedSupport?.reasoning ?? selectedClaim.ai_suggestion ?? "Resultat orchestre non disponible pour ce dossier."}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-3 text-sm">
-                    <span>Décision: <strong>{selectedSupport?.decision ?? "n/a"}</strong></span>
+                    <span>Decision: <strong>{selectedSupport?.decision ?? "n/a"}</strong></span>
                     <span>Risque: <strong>{selectedSupport?.risk_level ?? "n/a"}</strong></span>
                     <span>Fraude: <strong>{selectedSupport?.fraud_score ?? "n/a"}</strong></span>
-                    <span>Cohérence: <strong>{selectedSupport?.coherence_score ?? "n/a"}</strong></span>
-                    <span>Remboursement suggéré: <strong>{selectedSupport?.recommended_payout ?? 0} TND</strong></span>
+                    <span>Coherence: <strong>{selectedSupport?.coherence_score ?? "n/a"}</strong></span>
+                    <span>Remboursement suggere: <strong>{selectedSupport?.recommended_payout ?? 0} TND</strong></span>
                   </div>
                 </div>
 
                 <div className="rounded-xl border p-4">
                   <p className="mb-2 text-sm font-semibold">Couverture offre</p>
-                  <p className="text-sm font-medium">
-                    {selectedInsights?.offer_coverage?.offer_title ?? "Offre inconnue"}
-                  </p>
+                  <p className="text-sm font-medium">{selectedInsights?.offer_coverage?.offer_title ?? "Offre inconnue"}</p>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {selectedInsights?.offer_coverage?.coverage_reason ?? "Aucune analyse de couverture."}
                   </p>
@@ -801,29 +662,27 @@ export default function AgentDashboard() {
               </div>
 
               <div className="rounded-xl border p-4">
-                <p className="mb-3 text-sm font-semibold">Contrôles de cohérence</p>
+                <p className="mb-3 text-sm font-semibold">Controles de coherence</p>
                 <div className="space-y-2">
                   {(selectedInsights?.coherence_checks ?? []).length > 0 ? (
                     selectedInsights?.coherence_checks?.map((item) => (
                       <div key={item.code} className="rounded-lg border bg-muted/30 p-3 text-sm">
                         <div className="mb-1 flex items-center gap-2">
-                          <Badge variant="outline" className="capitalize">
-                            {item.severity}
-                          </Badge>
+                          <Badge variant="outline" className="capitalize">{item.severity}</Badge>
                           <span className="font-medium">{item.code}</span>
                         </div>
                         <p className="text-muted-foreground">{item.message}</p>
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-muted-foreground">Aucune incohérence majeure détectée.</p>
+                    <p className="text-sm text-muted-foreground">Aucune incoherence majeure detectee.</p>
                   )}
                 </div>
               </div>
 
               {suggestedDocuments.length > 0 ? (
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                  <p className="mb-2 text-sm font-semibold">Documents suggérés par l&apos;orchestrateur</p>
+                  <p className="mb-2 text-sm font-semibold">Documents suggeres par l'orchestrateur</p>
                   <p className="text-sm text-muted-foreground">{suggestedDocuments.join(", ")}</p>
                 </div>
               ) : null}
@@ -845,80 +704,7 @@ export default function AgentDashboard() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button
-                  className="bg-success text-success-foreground hover:bg-success/90"
-                  disabled={actionLoading === `${selectedClaim.id}:approve`}
-                  onClick={() => void runClaimAction(selectedClaim.id, "approve")}
-                >
-                  {actionLoading === `${selectedClaim.id}:approve` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsUp className="mr-1 h-4 w-4" />
-                      Accepter
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  variant="destructive"
-                  disabled={actionLoading === `${selectedClaim.id}:reject`}
-                  onClick={() => void runClaimAction(selectedClaim.id, "reject")}
-                >
-                  {actionLoading === `${selectedClaim.id}:reject` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <ThumbsDown className="mr-1 h-4 w-4" />
-                      Refuser
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  variant="outline"
-                  disabled={actionLoading === `${selectedClaim.id}:request-devis`}
-                  onClick={() => void runClaimAction(selectedClaim.id, "request-devis")}
-                >
-                  {actionLoading === `${selectedClaim.id}:request-devis` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <AlertTriangle className="mr-1 h-4 w-4" />
-                      Demander devis
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  variant="outline"
-                  disabled={actionLoading === `${selectedClaim.id}:request-rapport`}
-                  onClick={() => void runClaimAction(selectedClaim.id, "request-rapport")}
-                >
-                  {actionLoading === `${selectedClaim.id}:request-rapport` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <FileWarning className="mr-1 h-4 w-4" />
-                      Rapport expert
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  variant="outline"
-                  disabled={actionLoading === `${selectedClaim.id}:reanalyze`}
-                  onClick={() => void runClaimAction(selectedClaim.id, "reanalyze")}
-                >
-                  {actionLoading === `${selectedClaim.id}:reanalyze` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-1 h-4 w-4" />
-                      Régénérer
-                    </>
-                  )}
-                </Button>
+                {renderClaimActions(selectedClaim, selectedClaim.status === "pending" ? "pending" : selectedClaim.status === "in_review" || selectedClaim.status === "documents_requested" ? "in_progress" : "processed")}
               </div>
             </div>
           ) : null}

@@ -733,12 +733,12 @@ export class OrchestratorService {
       missingRequirements.push('Constat partie B');
     }
 
-    const estimatedCost = Number(
-      (damageData.agentDecision as any)?.estimatedTotalCostTnd ??
-        rapportExpertData?.repair_value_estimate ??
-        devisData?.total_ttc ??
-        0,
-    );
+    const estimatedCost =
+      this.pickPositiveNumber(
+        (damageData.agentDecision as any)?.estimatedTotalCostTnd,
+        rapportExpertData?.repair_value_estimate,
+        devisData?.total_ttc,
+      ) ?? 0;
 
     if (estimatedCost > 4000 && !rapportExpertData) {
       missingRequirements.push('Rapport expert');
@@ -829,19 +829,20 @@ export class OrchestratorService {
     const riskLevel: 'low' | 'medium' | 'high' =
       fraudScore >= 0.6 ? 'high' : fraudScore >= 0.3 ? 'medium' : 'low';
 
-    const estimatedTotalCost = Number(
-      (input.damageData.agentDecision as any)?.estimatedTotalCostTnd ??
-        input.rapportExpertData?.repair_value_estimate ??
-        input.devisData?.total_ttc ??
-        0,
-    );
+    const estimatedTotalCost =
+      this.pickPositiveNumber(
+        (input.damageData.agentDecision as any)?.estimatedTotalCostTnd,
+        input.rapportExpertData?.repair_value_estimate,
+        input.devisData?.total_ttc,
+      ) ?? 0;
     const offerCapRatio = input.offerCoverage.payout_cap_ratio || 0.7;
-    const declaredAmount = Number(
-      input.contract?.valeur_estimee ??
-        input.contract?.montant_declare ??
-        input.claim.amount ??
+    const declaredAmount =
+      this.pickPositiveNumber(
+        input.contract?.valeur_estimee,
+        input.contract?.montant_declare,
+        input.claim.amount,
         estimatedTotalCost,
-    );
+      ) ?? 0;
     const recommendedPayout = Math.max(
       0,
       Math.min(estimatedTotalCost || declaredAmount, declaredAmount * offerCapRatio),
@@ -998,5 +999,16 @@ export class OrchestratorService {
       return raw || null;
     }
     return date.toISOString().slice(0, 10);
+  }
+
+  // Ignore empty/zero amounts so reanalysis can fall back to devis or rapport expert values.
+  private pickPositiveNumber(...values: unknown[]): number | null {
+    for (const value of values) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return null;
   }
 }

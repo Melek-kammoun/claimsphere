@@ -48,10 +48,11 @@ export default function DashboardHome() {
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Contrats actifs", value: loading ? "..." : String(stats.activeContracts), icon: FileText, color: "text-primary" },
-          { label: "Sinistres en cours", value: loading ? "..." : String(stats.ongoingClaims), icon: AlertTriangle, color: "text-warning" },
-          { label: "Prochaine échéance", value: loading ? "..." : stats.nextDueIn ? `${stats.nextDueIn} jours` : "—", icon: Calendar, color: "text-destructive" },
-          { label: "Total payé (2026)", value: loading ? "..." : `${stats.totalPaid.toLocaleString()} DH`, icon: CreditCard, color: "text-success" },
+          { label: "Contrats actifs", value: "2", icon: FileText, color: "text-primary" },
+          { label: "Sinistres en cours", value: "3", icon: AlertTriangle, color: "text-warning" },
+          { label: "Prochaine échéance", value: `12 jours` , icon: Calendar, color: "text-destructive" },
+          { label: "Total payé (2026)", value: 
+            `4820 DT`, icon: CreditCard, color: "text-success" },
         ].map((stat, i) => (
           <motion.div key={stat.label} initial="hidden" animate="visible" variants={fadeUp} custom={i + 1} className="bg-card rounded-xl p-5 border shadow-card">
             <div className="flex items-center justify-between mb-3">
@@ -102,36 +103,44 @@ export default function DashboardHome() {
 
         {/* Notifications */}
         <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={6} className="bg-card rounded-xl border shadow-card">
-          <div className="flex items-center justify-between p-5 border-b">
-            <h3 className="font-display font-semibold text-foreground flex items-center gap-2">
-              <Bell className="w-4 h-4" /> Notifications
-            </h3>
-            <Badge className="bg-destructive text-destructive-foreground text-xs">
-              {loading ? "..." : notifications.length}
-            </Badge>
-          </div>
-          <div className="p-4 space-y-3">
-            {loading ? (
-              <p className="text-sm text-muted-foreground text-center py-4">Chargement...</p>
-            ) : notifications.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">Aucune notification.</p>
-            ) : (
-              notifications.map((n, i) => (
-                <div key={i} className={`flex items-start gap-3 p-3 rounded-lg ${statusColors[n.type]}`}>
-                  <div className="mt-0.5">
-                    {n.type === "warning" && <Clock className="w-4 h-4" />}
-                    {n.type === "info" && <AlertTriangle className="w-4 h-4" />}
-                    {n.type === "success" && <CheckCircle className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{n.text}</p>
-                    <p className="text-xs opacity-70 mt-1">{n.time}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </motion.div>
+  <div className="flex items-center justify-between p-5 border-b">
+    <h3 className="font-display font-semibold text-foreground flex items-center gap-2">
+      <Bell className="w-4 h-4" /> Notifications
+    </h3>
+    <Badge className="bg-destructive text-destructive-foreground text-xs">3</Badge>
+  </div>
+  <div className="p-4 space-y-3">
+    {[
+      {
+        type: "warning",
+        text: "Échéance contrat Auto dans 12 jours",
+        time: "Il y a 2 heures",
+      },
+      {
+        type: "info",
+        text: "Nouveau sinistre déclaré en attente de traitement",
+        time: "Hier à 14:30",
+      },
+      {
+        type: "success",
+        text: "Paiement de 320 DT confirmé pour Assurance Habitation",
+        time: "17 Apr 2026",
+      },
+    ].map((n, i) => (
+      <div key={i} className={`flex items-start gap-3 p-3 rounded-lg ${statusColors[n.type]}`}>
+        <div className="mt-0.5">
+          {n.type === "warning" && <Clock className="w-4 h-4" />}
+          {n.type === "info" && <AlertTriangle className="w-4 h-4" />}
+          {n.type === "success" && <CheckCircle className="w-4 h-4" />}
+        </div>
+        <div>
+          <p className="text-sm font-medium">{n.text}</p>
+          <p className="text-xs opacity-70 mt-1">{n.time}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+</motion.div>
       </div>
     </div>
   );

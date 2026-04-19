@@ -196,8 +196,8 @@ export default function ContractRequestPage() {
             { label: "Modele vehicule", name: "vehiculeModele", type: "text" },
             { label: "Age du vehicule (ans)", name: "ageVehicule", type: "number" },
             { label: "Kilometrage", name: "kilometrage", type: "number" },
-            { label: "Immatriculation (chiffres)", name: "immatriculationChiffres", type: "text" },
-            { label: "Immatriculation (lettres)", name: "immatriculationLettres", type: "text" },
+            { label: "Immatriculation (4 chiffres)", name: "immatriculationChiffres", type: "text" },
+            { label: "Immatriculation (3 chiffres)", name: "immatriculationLettres", type: "text" },
           ].map((field) => (
             <div key={field.name} className="grid gap-1">
               <label className="text-sm font-medium text-foreground">{field.label}</label>
@@ -230,7 +230,7 @@ export default function ContractRequestPage() {
           ))}
 
           <div className="rounded-lg border bg-slate-50 p-4">
-            <p className="text-sm text-muted-foreground">Estimation retournee par le backend :</p>
+            <p className="text-sm text-muted-foreground">Proposition :</p>
             <div className="mt-3">
               <Button
                 type="button"
@@ -238,14 +238,14 @@ export default function ContractRequestPage() {
                 onClick={estimateVehicleValue}
                 disabled={estimateMutation.isPending}
               >
-                {estimateMutation.isPending ? "Estimation..." : "Estimer depuis le backend"}
+                {estimateMutation.isPending ? "Estimation..." : "Proposition "}
               </Button>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Valeur estimee : {estimatedValue !== null ? `${estimatedValue.toFixed(2)} TND` : "Non estimee"}
+              Valeur estimée : {estimatedValue !== null ? `${estimatedValue.toFixed(2)} TND` : "Non estimee"}
             </p>
             <p className="text-sm text-muted-foreground">
-              Prime backend : {backendPrime !== null ? `${backendPrime.toFixed(2)} TND` : "Non calculee"}
+              Prime estimée : {backendPrime !== null ? `${backendPrime.toFixed(2)} TND` : "Non calculee"}
             </p>
             {/* FIX: show computed end date for transparency */}
             {form.dateDebut && (

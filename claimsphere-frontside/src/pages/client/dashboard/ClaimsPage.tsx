@@ -24,6 +24,8 @@ import { useToast } from "@/hooks/use-toast";
 import { API_BASE_URL, ApiError, apiRequest } from "@/lib/api-client";
 
 type ClaimStatus = "pending" | "in_review" | "documents_requested" | "approved" | "rejected";
+type WorkflowStep = "claim" | "qr" | "uploads" | "done";
+type FinalizationCheckpoint = "claim" | "documents" | "ocr" | "damage" | "merge";
 
 interface Claim {
   id: string;
@@ -34,6 +36,10 @@ interface Claim {
   vehicle: string | null;
   amount: number | null;
   location?: string | null;
+  description?: string | null;
+  contract_id?: string | null;
+  documents?: Record<string, any> | null;
+  created_at?: string;
 }
 
 interface Contract {
@@ -50,6 +56,11 @@ interface ClaimsResponse {
   success: boolean;
   data: Claim[];
   total: number;
+}
+
+interface ClaimDetailResponse {
+  success: boolean;
+  data: Claim;
 }
 
 interface WorkflowStartResponse {
@@ -87,20 +98,24 @@ interface WorkflowCompleteResponse {
   };
 }
 
-type WorkflowStep = "claim" | "qr" | "uploads" | "done";
-type FinalizationCheckpoint = "claim" | "documents" | "ocr" | "damage" | "merge";
-
 interface SupportingDocsState {
   claimId: string;
   open: boolean;
 }
 
-const statusConfig: Record<ClaimStatus, { label: string; color: string; icon: typeof CheckCircle }> = {
+const statusConfig: Record<
+  ClaimStatus,
+  { label: string; color: string; icon: typeof CheckCircle }
+> = {
   pending: { label: "En attente", color: "bg-yellow-50 text-yellow-700 border-yellow-200", icon: Clock },
   in_review: { label: "En traitement", color: "bg-blue-50 text-blue-700 border-blue-200", icon: Clock },
-  documents_requested: { label: "Documents requis", color: "bg-orange-50 text-orange-700 border-orange-200", icon: AlertTriangle },
-  approved: { label: "Approuvé", color: "bg-green-50 text-green-700 border-green-200", icon: CheckCircle },
-  rejected: { label: "Refusé", color: "bg-red-50 text-red-700 border-red-200", icon: XCircle },
+  documents_requested: {
+    label: "Documents requis",
+    color: "bg-orange-50 text-orange-700 border-orange-200",
+    icon: AlertTriangle,
+  },
+  approved: { label: "Approuve", color: "bg-green-50 text-green-700 border-green-200", icon: CheckCircle },
+  rejected: { label: "Refuse", color: "bg-red-50 text-red-700 border-red-200", icon: XCircle },
 };
 
 const getToken = (): string => {
@@ -131,6 +146,9 @@ export default function ClaimsPage() {
   const [rapportExpertFile, setRapportExpertFile] = useState<File | null>(null);
   const [devisFile, setDevisFile] = useState<File | null>(null);
   const [uploadingSupportingDocs, setUploadingSupportingDocs] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
 
   const [form, setForm] = useState({
     contract_id: "",
@@ -161,8 +179,19 @@ export default function ClaimsPage() {
     if (!workflowComplete?.orchestration.consolidated_claim_data.constat.second_party) {
       return "En attente du second conducteur";
     }
-    return "Constat du second conducteur reçu";
+    return "Constat du second conducteur recu";
   }, [workflowComplete]);
+
+  const selectedConstat = selectedClaim?.documents?.consolidated_result?.consolidated_claim_data?.constat;
+  const selectedWorkflow = selectedClaim?.documents;
+
+  const checkpoints: Array<{ key: FinalizationCheckpoint; label: string; description: string }> = [
+    { key: "claim", label: "Creation du dossier", description: "Le sinistre est cree et lie au constat." },
+    { key: "documents", label: "Enregistrement des pieces", description: "PV police et images sont rattaches au dossier." },
+    { key: "ocr", label: "Analyse OCR", description: "Le PV police est lu et structure." },
+    { key: "damage", label: "Analyse des dommages", description: "Les images d'accident sont analysees." },
+    { key: "merge", label: "Consolidation", description: "Les donnees sont fusionnees pour la decision." },
+  ];
 
   const loadClaims = async () => {
     try {
@@ -229,8 +258,8 @@ export default function ClaimsPage() {
   const validateStartStep = () => {
     if (!form.date || !form.location || !form.description || !form.vehicle) {
       toast({
-        title: "Informations incomplètes",
-        description: "Renseignez la date, le lieu, la description et le véhicule.",
+        title: "Informations incompletes",
+        description: "Renseignez la date, le lieu, la description et le vehicule.",
         variant: "destructive",
       });
       return false;
@@ -239,7 +268,7 @@ export default function ClaimsPage() {
     if (!form.fullName || !form.phone || !form.email || !form.insuranceCompany || !form.policyNumber) {
       toast({
         title: "Constat incomplet",
-        description: "Les informations du conducteur et de l’assurance sont obligatoires.",
+        description: "Les informations du conducteur et de l'assurance sont obligatoires.",
         variant: "destructive",
       });
       return false;
@@ -297,11 +326,11 @@ export default function ClaimsPage() {
       setWorkflowStart(response.data);
       setStep("qr");
       toast({
-        title: "Constat initialisé",
-        description: "Le QR code a été généré. Vous pouvez maintenant partager le lien puis ajouter les pièces.",
+        title: "Constat initialise",
+        description: "Le QR code a ete genere. Vous pouvez maintenant partager le lien puis ajouter les pieces.",
       });
     } catch (error) {
-      const message = error instanceof ApiError ? error.message : "Impossible de démarrer la déclaration.";
+      const message = error instanceof ApiError ? error.message : "Impossible de demarrer la declaration.";
       toast({ title: "Erreur", description: message, variant: "destructive" });
     } finally {
       setStarting(false);
@@ -312,7 +341,7 @@ export default function ClaimsPage() {
     if (!workflowStart?.qr_token) {
       toast({
         title: "QR manquant",
-        description: "Le workflow doit être initialisé avant la finalisation.",
+        description: "Le workflow doit etre initialise avant la finalisation.",
         variant: "destructive",
       });
       return;
@@ -321,7 +350,7 @@ export default function ClaimsPage() {
     if (!pvPoliceFile) {
       toast({
         title: "PV requis",
-        description: "Ajoutez le procès-verbal de police pour finaliser le dossier.",
+        description: "Ajoutez le proces-verbal de police pour finaliser le dossier.",
         variant: "destructive",
       });
       return;
@@ -330,7 +359,7 @@ export default function ClaimsPage() {
     if (accidentImages.length === 0) {
       toast({
         title: "Images requises",
-        description: "Ajoutez au moins une image de l’accident.",
+        description: "Ajoutez au moins une image de l'accident.",
         variant: "destructive",
       });
       return;
@@ -338,6 +367,7 @@ export default function ClaimsPage() {
 
     setFinishing(true);
     setActiveCheckpoint("claim");
+
     try {
       const formData = new FormData();
       formData.append(
@@ -354,6 +384,7 @@ export default function ClaimsPage() {
       );
       formData.append("pv_police", pvPoliceFile);
       accidentImages.forEach((file) => formData.append("accident_images", file));
+
       setActiveCheckpoint("documents");
 
       const response = await fetch(`${API_BASE_URL}/api/claims/workflow/complete`, {
@@ -366,19 +397,22 @@ export default function ClaimsPage() {
 
       const payload = (await response.json()) as WorkflowCompleteResponse | { message?: string };
       if (!response.ok) {
-        const message = typeof payload.message === "string" ? payload.message : "Impossible de finaliser le dossier.";
+        const message =
+          typeof payload.message === "string" ? payload.message : "Impossible de finaliser le dossier.";
         throw new Error(message);
       }
 
       setActiveCheckpoint("ocr");
       setActiveCheckpoint("damage");
       setActiveCheckpoint("merge");
+
       setWorkflowComplete((payload as WorkflowCompleteResponse).data);
       setStep("done");
       await loadClaims();
+
       toast({
-        title: "Sinistre enregistré",
-        description: "Le dossier a été consolidé et les analyses IA sont prêtes pour décision.",
+        title: "Sinistre enregistre",
+        description: "Le dossier a ete consolide et les analyses sont pretes pour decision.",
       });
     } catch (error) {
       toast({
@@ -392,28 +426,11 @@ export default function ClaimsPage() {
     }
   };
 
-  const checkpoints: Array<{ key: FinalizationCheckpoint; label: string; description: string }> = [
-    { key: "claim", label: "CrÃ©ation du dossier", description: "Le sinistre est crÃ©Ã© et liÃ© au constat." },
-    { key: "documents", label: "Enregistrement des piÃ¨ces", description: "PV police et images sont rattachÃ©s au dossier." },
-    { key: "ocr", label: "Analyse OCR", description: "Le PV police est lu et structurÃ©." },
-    { key: "damage", label: "Analyse des dommages", description: "Les images d'accident sont analysÃ©es." },
-    { key: "merge", label: "Consolidation", description: "Les donnÃ©es sont fusionnÃ©es pour la dÃ©cision." },
-  ];
-
-  const getCheckpointState = (checkpoint: FinalizationCheckpoint) => {
-    if (!activeCheckpoint) return "idle";
-    const currentIndex = checkpoints.findIndex((item) => item.key === activeCheckpoint);
-    const checkpointIndex = checkpoints.findIndex((item) => item.key === checkpoint);
-    if (checkpointIndex < currentIndex) return "done";
-    if (checkpointIndex === currentIndex) return "active";
-    return "pending";
-  };
-
   const uploadSupportingDocuments = async () => {
     if (!supportingDocsDialog.claimId) return;
     if (!rapportExpertFile && !devisFile) {
       toast({
-        title: "Pièces manquantes",
+        title: "Pieces manquantes",
         description: "Ajoutez au moins un rapport expert ou un devis.",
         variant: "destructive",
       });
@@ -457,19 +474,46 @@ export default function ClaimsPage() {
       setSupportingDocsDialog({ claimId: "", open: false });
       setRapportExpertFile(null);
       setDevisFile(null);
+
       toast({
-        title: "Pièces ajoutées",
-        description: "Les nouvelles pièces ont été analysées et le dossier a été régénéré.",
+        title: "Pieces ajoutees",
+        description: "Les nouvelles pieces ont ete analysees et le dossier a ete regenere.",
       });
     } catch (error) {
       toast({
         title: "Erreur",
-        description: error instanceof Error ? error.message : "Impossible d'ajouter les pièces.",
+        description: error instanceof Error ? error.message : "Impossible d'ajouter les pieces.",
         variant: "destructive",
       });
     } finally {
       setUploadingSupportingDocs(false);
     }
+  };
+
+  const openClaimDetails = async (claimId: string) => {
+    setDetailsLoading(true);
+    try {
+      const response = await apiRequest<ClaimDetailResponse>(`/api/claims/${claimId}`);
+      setSelectedClaim(response.data);
+      setDetailsOpen(true);
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: error instanceof Error ? error.message : "Impossible de charger le detail du sinistre.",
+        variant: "destructive",
+      });
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const getCheckpointState = (checkpoint: FinalizationCheckpoint) => {
+    if (!activeCheckpoint) return "idle";
+    const currentIndex = checkpoints.findIndex((item) => item.key === activeCheckpoint);
+    const checkpointIndex = checkpoints.findIndex((item) => item.key === checkpoint);
+    if (checkpointIndex < currentIndex) return "done";
+    if (checkpointIndex === currentIndex) return "active";
+    return "pending";
   };
 
   return (
@@ -478,7 +522,7 @@ export default function ClaimsPage() {
         <div>
           <h2 className="font-display text-2xl font-bold text-foreground">Gestion des sinistres</h2>
           <p className="text-sm text-muted-foreground">
-            Vos sinistres personnels, sans suggestions IA affichées côté client.
+            Vos sinistres personnels, sans suggestions IA affichees cote client.
           </p>
         </div>
 
@@ -486,31 +530,31 @@ export default function ClaimsPage() {
           <DialogTrigger asChild>
             <Button className="bg-gradient-primary text-primary-foreground hover:opacity-90">
               <Plus className="mr-2 h-4 w-4" />
-              Déclarer sinistre
+              Declarer sinistre
             </Button>
           </DialogTrigger>
 
           <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-display">
-                Déclaration de sinistre
+                Declaration de sinistre
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  {step === "claim" && "Étape 1 / 3 - Déclaration + constat"}
-                  {step === "qr" && "Étape 2 / 3 - QR du second conducteur"}
-                  {step === "uploads" && "Étape 3 / 3 - PV et images"}
-                  {step === "done" && "Workflow finalisé"}
+                  {step === "claim" && "Etape 1 / 3 - Declaration + constat"}
+                  {step === "qr" && "Etape 2 / 3 - QR du second conducteur"}
+                  {step === "uploads" && "Etape 3 / 3 - PV et images"}
+                  {step === "done" && "Workflow finalise"}
                 </span>
               </DialogTitle>
             </DialogHeader>
 
-            {step === "claim" && (
+            {step === "claim" ? (
               <div className="space-y-6">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2 sm:col-span-2">
-                    <Label>Contrat concerné</Label>
+                    <Label>Contrat concerne</Label>
                     <Select value={form.contract_id} onValueChange={handleContractChange}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Sélectionner un contrat" />
+                        <SelectValue placeholder="Selectionner un contrat" />
                       </SelectTrigger>
                       <SelectContent>
                         {contracts.length === 0 ? (
@@ -543,7 +587,7 @@ export default function ClaimsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Véhicule / immatriculation</Label>
+                    <Label>Vehicule / immatriculation</Label>
                     <Input value={form.vehicle} onChange={(event) => setForm((prev) => ({ ...prev, vehicle: event.target.value }))} />
                   </div>
 
@@ -578,49 +622,40 @@ export default function ClaimsPage() {
                       <Label>Nom complet</Label>
                       <Input value={form.fullName} onChange={(event) => setForm((prev) => ({ ...prev, fullName: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
-                      <Label>Téléphone</Label>
+                      <Label>Telephone</Label>
                       <Input value={form.phone} onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
                       <Label>Email</Label>
                       <Input type="email" value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
                       <Label>Permis</Label>
                       <Input value={form.drivingLicense} onChange={(event) => setForm((prev) => ({ ...prev, drivingLicense: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
-                      <Label>Compagnie d’assurance</Label>
+                      <Label>Compagnie d'assurance</Label>
                       <Input value={form.insuranceCompany} onChange={(event) => setForm((prev) => ({ ...prev, insuranceCompany: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
-                      <Label>Numéro de police</Label>
+                      <Label>Numero de police</Label>
                       <Input value={form.policyNumber} onChange={(event) => setForm((prev) => ({ ...prev, policyNumber: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
                       <Label>Agent / agence</Label>
                       <Input value={form.agentName} onChange={(event) => setForm((prev) => ({ ...prev, agentName: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
-                      <Label>Année véhicule</Label>
+                      <Label>Annee vehicule</Label>
                       <Input value={form.vehicleYear} onChange={(event) => setForm((prev) => ({ ...prev, vehicleYear: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
                       <Label>Marque</Label>
                       <Input value={form.vehicleBrand} onChange={(event) => setForm((prev) => ({ ...prev, vehicleBrand: event.target.value }))} />
                     </div>
-
                     <div className="space-y-2">
-                      <Label>Modèle</Label>
+                      <Label>Modele</Label>
                       <Input value={form.vehicleModel} onChange={(event) => setForm((prev) => ({ ...prev, vehicleModel: event.target.value }))} />
                     </div>
                   </div>
@@ -632,18 +667,18 @@ export default function ClaimsPage() {
                   </Button>
                   <Button type="button" className="flex-1 bg-gradient-primary text-primary-foreground" onClick={startWorkflow} disabled={starting}>
                     {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Générer le QR
+                    Generer le QR
                   </Button>
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {step === "qr" && workflowStart && (
+            {step === "qr" && workflowStart ? (
               <div className="space-y-5">
                 <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-                  <p className="font-semibold text-green-800">Constat créé</p>
+                  <p className="font-semibold text-green-800">Constat cree</p>
                   <p className="text-sm text-green-700">
-                    Partagez ce lien ou ce QR code avec le second conducteur pour qu’il complète sa partie.
+                    Partagez ce lien ou ce QR code avec le second conducteur pour qu'il complete sa partie.
                   </p>
                 </div>
 
@@ -665,39 +700,30 @@ export default function ClaimsPage() {
                     Retour
                   </Button>
                   <Button type="button" className="flex-1" onClick={() => setStep("uploads")}>
-                    Continuer vers les pièces
+                    Continuer vers les pieces
                   </Button>
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {step === "uploads" && (
+            {step === "uploads" ? (
               <div className="space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-xl border p-4">
                     <div className="mb-3 flex items-center gap-2 font-medium">
                       <FileText className="h-4 w-4" />
-                      Procès-verbal (PDF)
+                      Proces-verbal (PDF)
                     </div>
-                    <Input
-                      type="file"
-                      accept=".pdf,application/pdf"
-                      onChange={(event) => setPvPoliceFile(event.target.files?.[0] ?? null)}
-                    />
+                    <Input type="file" accept=".pdf,application/pdf" onChange={(event) => setPvPoliceFile(event.target.files?.[0] ?? null)} />
                     {pvPoliceFile ? <p className="mt-2 text-xs text-muted-foreground">{pvPoliceFile.name}</p> : null}
                   </div>
 
                   <div className="rounded-xl border p-4">
                     <div className="mb-3 flex items-center gap-2 font-medium">
                       <Camera className="h-4 w-4" />
-                      Images de l’accident
+                      Images de l'accident
                     </div>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={(event) => setAccidentImages(Array.from(event.target.files ?? []))}
-                    />
+                    <Input type="file" accept="image/*" multiple onChange={(event) => setAccidentImages(Array.from(event.target.files ?? []))} />
                     {accidentImages.length > 0 ? (
                       <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                         {accidentImages.map((file) => (
@@ -708,38 +734,21 @@ export default function ClaimsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                  La finalisation crée l’entrée du sinistre, rattache le constat, envoie le PV au module OCR et lance
-                  l’analyse des images pour produire un résultat consolidé prêt pour décision.
-                </div>
-
-                <div className="rounded-xl border p-4">
+                <div className="rounded-xl border bg-muted/20 p-4">
                   <p className="mb-3 text-sm font-semibold">Checkpoints de traitement</p>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {checkpoints.map((checkpoint) => {
-                      const checkpointState = getCheckpointState(checkpoint.key);
+                      const state = getCheckpointState(checkpoint.key);
                       return (
-                        <div key={checkpoint.key} className="flex items-start gap-3">
-                          <div
-                            className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${
-                              checkpointState === "done"
-                                ? "border-green-500 bg-green-500 text-white"
-                                : checkpointState === "active"
-                                  ? "border-blue-500 bg-blue-50 text-blue-600"
-                                  : "border-muted-foreground/30 bg-background text-muted-foreground"
-                            }`}
-                          >
-                            {checkpointState === "done" ? (
-                              <CheckCircle className="h-3.5 w-3.5" />
-                            ) : checkpointState === "active" ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Clock className="h-3.5 w-3.5" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">{checkpoint.label}</p>
-                            <p className="text-xs text-muted-foreground">{checkpoint.description}</p>
+                        <div key={checkpoint.key} className="rounded-lg border bg-white p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium">{checkpoint.label}</p>
+                              <p className="text-xs text-muted-foreground">{checkpoint.description}</p>
+                            </div>
+                            <Badge variant="outline">
+                              {state === "done" ? "Termine" : state === "active" ? "En cours" : "En attente"}
+                            </Badge>
                           </div>
                         </div>
                       );
@@ -757,17 +766,17 @@ export default function ClaimsPage() {
                   </Button>
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {step === "done" && workflowComplete && (
+            {step === "done" && workflowComplete ? (
               <div className="space-y-5">
                 <div className="rounded-xl border border-green-200 bg-green-50 p-4">
                   <div className="flex items-start gap-3">
                     <CheckCircle className="mt-0.5 h-5 w-5 text-green-600" />
                     <div>
-                      <p className="font-semibold text-green-800">Sinistre créé</p>
+                      <p className="font-semibold text-green-800">Sinistre cree</p>
                       <p className="text-sm text-green-700">
-                        Référence: <strong>{workflowComplete.claim.reference}</strong>
+                        Reference: <strong>{workflowComplete.claim.reference}</strong>
                       </p>
                     </div>
                   </div>
@@ -775,7 +784,7 @@ export default function ClaimsPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-xl border p-4">
-                    <p className="mb-2 text-sm font-semibold">Décision support</p>
+                    <p className="mb-2 text-sm font-semibold">Decision support</p>
                     <Badge variant="outline" className="mb-2 capitalize">
                       {workflowComplete.orchestration.decision_support.decision}
                     </Badge>
@@ -783,7 +792,7 @@ export default function ClaimsPage() {
                       Risque: {workflowComplete.orchestration.decision_support.risk_level}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Montant recommandé: {workflowComplete.orchestration.decision_support.recommended_payout}
+                      Montant recommande: {workflowComplete.orchestration.decision_support.recommended_payout}
                     </p>
                   </div>
 
@@ -804,7 +813,7 @@ export default function ClaimsPage() {
                   Fermer
                 </Button>
               </div>
-            )}
+            ) : null}
           </DialogContent>
         </Dialog>
       </div>
@@ -815,8 +824,8 @@ export default function ClaimsPage() {
           <div>
             <h4 className="text-sm font-semibold">Workflow client</h4>
             <p className="text-sm text-muted-foreground">
-              Le client voit uniquement ses propres sinistres. La création suit désormais le flux complet: constat
-              initial, QR pour le second conducteur, puis finalisation avec PV et images.
+              Le client voit uniquement ses propres sinistres. La creation suit le flux complet: constat initial,
+              QR pour le second conducteur, puis finalisation avec PV et images.
             </p>
           </div>
         </div>
@@ -830,9 +839,9 @@ export default function ClaimsPage() {
         ) : claims.length === 0 ? (
           <div className="py-12 text-center">
             <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">Aucun sinistre déclaré pour le moment.</p>
+            <p className="text-muted-foreground">Aucun sinistre declare pour le moment.</p>
             <Button variant="outline" className="mt-4" onClick={() => setShowModal(true)}>
-              Déclarer sinistre
+              Declarer sinistre
             </Button>
           </div>
         ) : (
@@ -862,9 +871,7 @@ export default function ClaimsPage() {
                       </p>
 
                       {claim.location ? (
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Lieu: {claim.location}
-                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">Lieu: {claim.location}</p>
                       ) : null}
 
                       {claim.amount != null ? (
@@ -875,7 +882,7 @@ export default function ClaimsPage() {
 
                       {claim.status === "documents_requested" ? (
                         <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 p-3 text-xs text-orange-800">
-                          L'agent a demandé des pièces complémentaires. Vous pouvez ajouter un rapport expert ou un devis.
+                          L'agent a demande des pieces complementaires. Vous pouvez ajouter un rapport expert ou un devis.
                         </div>
                       ) : null}
                     </div>
@@ -889,12 +896,18 @@ export default function ClaimsPage() {
                         onClick={() => setSupportingDocsDialog({ claimId: claim.id, open: true })}
                       >
                         <FileText className="mr-1 h-4 w-4" />
-                        Ajouter pièces
+                        Ajouter pieces
                       </Button>
                     ) : null}
-                    <Button variant="ghost" size="sm" className="self-start">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="self-start"
+                      disabled={detailsLoading}
+                      onClick={() => void openClaimDetails(claim.id)}
+                    >
                       <Eye className="mr-1 h-4 w-4" />
-                      Détails
+                      Details
                     </Button>
                   </div>
                 </div>
@@ -916,52 +929,122 @@ export default function ClaimsPage() {
       >
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle className="font-display">Ajouter des pièces complémentaires</DialogTitle>
+            <DialogTitle className="font-display">Ajouter des pieces complementaires</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-              Ajoutez les pièces demandées par l’agent. Le dossier sera réanalysé automatiquement après l’upload.
+              Ajoutez les pieces demandees par l'agent. Le dossier sera reanalyse automatiquement apres l'upload.
             </div>
 
             <div className="space-y-2">
               <Label>Rapport expert (PDF)</Label>
-              <Input
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={(event) => setRapportExpertFile(event.target.files?.[0] ?? null)}
-              />
+              <Input type="file" accept=".pdf,application/pdf" onChange={(event) => setRapportExpertFile(event.target.files?.[0] ?? null)} />
             </div>
 
             <div className="space-y-2">
               <Label>Devis garage (PDF)</Label>
-              <Input
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={(event) => setDevisFile(event.target.files?.[0] ?? null)}
-              />
+              <Input type="file" accept=".pdf,application/pdf" onChange={(event) => setDevisFile(event.target.files?.[0] ?? null)} />
             </div>
 
             <div className="flex gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => setSupportingDocsDialog({ claimId: "", open: false })}
-              >
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setSupportingDocsDialog({ claimId: "", open: false })}>
                 Annuler
               </Button>
-              <Button
-                type="button"
-                className="flex-1"
-                disabled={uploadingSupportingDocs}
-                onClick={() => void uploadSupportingDocuments()}
-              >
+              <Button type="button" className="flex-1" disabled={uploadingSupportingDocs} onClick={() => void uploadSupportingDocuments()}>
                 {uploadingSupportingDocs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Envoyer et régénérer
+                Envoyer et regenerer
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={detailsOpen}
+        onOpenChange={(open) => {
+          setDetailsOpen(open);
+          if (!open) {
+            setSelectedClaim(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              Details du sinistre {selectedClaim?.reference ?? ""}
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedClaim ? (
+            <div className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border p-4">
+                  <p className="mb-3 text-sm font-semibold">Informations principales</p>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="font-medium">Reference:</span> {selectedClaim.reference}</p>
+                    <p><span className="font-medium">Type:</span> {selectedClaim.type || "Non renseigne"}</p>
+                    <p><span className="font-medium">Date:</span> {selectedClaim.date || "Non renseignee"}</p>
+                    <p><span className="font-medium">Lieu:</span> {selectedClaim.location || "Non renseigne"}</p>
+                    <p><span className="font-medium">Vehicule:</span> {selectedClaim.vehicle || "Non renseigne"}</p>
+                    <p><span className="font-medium">Statut:</span> {statusConfig[selectedClaim.status]?.label ?? selectedClaim.status}</p>
+                    <p><span className="font-medium">Contrat lie:</span> {selectedClaim.contract_id || "Aucun"}</p>
+                    <p>
+                      <span className="font-medium">Cree le:</span>{" "}
+                      {selectedClaim.created_at ? new Date(selectedClaim.created_at).toLocaleString("fr-FR") : "Non disponible"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-4">
+                  <p className="mb-3 text-sm font-semibold">Description du client</p>
+                  <div className="rounded-lg bg-muted/30 p-3 text-sm text-muted-foreground">
+                    {selectedClaim.description || "Aucune description fournie."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border p-4">
+                  <p className="mb-3 text-sm font-semibold">Constat</p>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="font-medium">Constat ID:</span> {selectedWorkflow?.constat_id || selectedConstat?.id || "Non disponible"}</p>
+                    <p><span className="font-medium">Statut:</span> {selectedConstat?.status || "En attente"}</p>
+                    <p><span className="font-medium">QR token:</span> {selectedWorkflow?.qr_token || "Non disponible"}</p>
+                    <p><span className="font-medium">Deuxieme conducteur:</span> {selectedConstat?.second_party ? "Partie recue" : "En attente"}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-4">
+                  <p className="mb-3 text-sm font-semibold">Pieces envoyees</p>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>
+                      PV police:{" "}
+                      {selectedWorkflow?.uploaded_documents?.pv_police?.original_name ||
+                        selectedWorkflow?.uploaded_documents?.pv_police?.file_name ||
+                        "Non disponible"}
+                    </p>
+                    <p>
+                      Images accident:{" "}
+                      {Array.isArray(selectedWorkflow?.uploaded_documents?.accident_images)
+                        ? selectedWorkflow.uploaded_documents.accident_images.length
+                        : 0}{" "}
+                      fichier(s)
+                    </p>
+                    <p>Workflow: {selectedWorkflow?.workflow_status || "Non disponible"}</p>
+                    <p>
+                      Dernier traitement:{" "}
+                      {selectedWorkflow?.processed_at ? new Date(selectedWorkflow.processed_at).toLocaleString("fr-FR") : "Pas encore traite"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 text-center">
+              <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

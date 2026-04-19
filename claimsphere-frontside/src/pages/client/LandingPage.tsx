@@ -102,7 +102,7 @@ export default function LandingPage() {
                   </Button>
                 </Link>
                 <a href="#offres">
-                  <Button size="lg" variant="outline" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+                  <Button size="lg" variant="outline" className="border-primary-foreground/10 bg-primary-foreground/10text-primary-foreground hover:bg-primary-foreground/10">
                     Découvrir les offres
                   </Button>
                 </a>
